@@ -1,82 +1,121 @@
-<!-- entrypoints/popup/App.svelte -->
+<!-- src/entrypoints/popup/App.svelte -->
 <script lang="ts">
   import { onMount } from 'svelte';
   import { browser } from 'wxt/browser';
   import type {
-    RecorderUiState,
+    RecorderBackgroundRequest,
     RecorderFixtureMeta,
+    RecorderStateUpdateMessage,
+    RecorderUiState,
   } from '../../lib/types/recorder';
-  import type {
-    PopupToBackgroundRequest,
-    PopupToBackgroundResponse,
-    BackgroundToPopupBroadcast,
-  } from '../../lib/types/runtime';
 
   let recording = false;
   let fixtures: RecorderFixtureMeta[] = [];
   let loading = true;
   let busy = false;
+  let downloading = false;
   let lastError: string | null = null;
 
   const formatTimestamp = (iso: string): string => {
     const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return iso;
-    return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+    if (Number.isNaN(date.getTime())) {
+      return iso;
+    }
+    const datePart = date.toLocaleDateString();
+    const timePart = date.toLocaleTimeString();
+    return `${datePart} ${timePart}`;
   };
 
-  const sendRequest = async (
-    request: PopupToBackgroundRequest
-  ): Promise<PopupToBackgroundResponse> => {
-    if (busy) return null;
+  const refreshState = async () => {
+    loading = true;
+    lastError = null;
+    try {
+      const response = (await browser.runtime.sendMessage({
+        type: 'recorder:get-state',
+      } satisfies RecorderBackgroundRequest)) as RecorderUiState | null;
+      if (response) {
+        recording = response.recording;
+        fixtures = [...response.fixtures];
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : `${error}`;
+    } finally {
+      loading = false;
+    }
+  };
+
+  const updateState = (payload: RecorderUiState) => {
+    recording = payload.recording;
+    fixtures = [...payload.fixtures];
+  };
+
+  const setRecording = async (next: boolean) => {
+    if (busy) {
+      return;
+    }
     busy = true;
     lastError = null;
     try {
-      return await browser.runtime.sendMessage(request);
+      await browser.runtime.sendMessage({
+        type: 'recorder:set-recording',
+        recording: next,
+      } satisfies RecorderBackgroundRequest);
+      await refreshState();
     } catch (error) {
-      console.error(error);
       lastError = error instanceof Error ? error.message : `${error}`;
-      return null;
     } finally {
       busy = false;
     }
   };
 
-  const refreshState = async () => {
-    loading = true;
-    const response = (await sendRequest({
-      type: 'recorder:get-state',
-    })) as RecorderUiState | null;
-    if (response) {
-      recording = response.recording;
-      fixtures = [...response.fixtures];
+  const clearFixtures = async () => {
+    if (busy) {
+      return;
     }
-    loading = false;
+    busy = true;
+    lastError = null;
+    try {
+      await browser.runtime.sendMessage({
+        type: 'recorder:clear-fixtures',
+      } satisfies RecorderBackgroundRequest);
+      await refreshState();
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : `${error}`;
+    } finally {
+      busy = false;
+    }
   };
 
-  const handleStateUpdate = (payload: RecorderUiState) => {
-    recording = payload.recording;
-    fixtures = [...payload.fixtures];
-  };
-
-  const setRecording = (isRecording: boolean) => {
-    void sendRequest({ type: 'recorder:set-recording', recording: isRecording });
-  };
-
-  const clearFixtures = () => {
-    void sendRequest({ type: 'recorder:clear-fixtures' });
-  };
-
-  const downloadFixtures = () => {
-    void sendRequest({ type: 'recorder:download-all' });
+  const downloadFixtures = async () => {
+    if (busy) {
+      return;
+    }
+    busy = true;
+    downloading = true;
+    lastError = null;
+    try {
+      await browser.runtime.sendMessage({
+        type: 'recorder:download-all',
+      } satisfies RecorderBackgroundRequest);
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : `${error}`;
+    } finally {
+      downloading = false;
+      busy = false;
+    }
   };
 
   onMount(() => {
     void refreshState();
     const listener = (message: unknown) => {
-      if (!message || typeof message !== 'object') return;
-      const typed = message as BackgroundToPopupBroadcast;
-      if (typed.type !== 'recorder:state-updated') return;
-      handleStateUpdate(typed.payload);
+      if (!message || typeof message !== 'object') {
+        return;
+      }
+      const typed = message as RecorderStateUpdateMessage;
+      if (typed.type !== 'recorder:state-updated') {
+        return;
+      }
+      updateState(typed.payload);
     };
     browser.runtime.onMessage.addListener(listener);
     return () => {
@@ -99,7 +138,10 @@
         type="checkbox"
         bind:checked={recording}
         disabled={loading || busy}
-        on:change={(e) => setRecording(e.currentTarget.checked)}
+        on:change={(event) =>
+          setRecording(
+            (event.currentTarget as HTMLInputElement | null)?.checked ?? false
+          )}
       />
       <span>{recording ? 'Recording enabled' : 'Recording disabled'}</span>
     </label>
@@ -126,7 +168,7 @@
         on:click={downloadFixtures}
         disabled={fixtures.length === 0 || busy}
       >
-        Download fixtures zip
+        {downloading ? 'Packaging…' : 'Download fixtures zip'}
       </button>
       <button
         type="button"
@@ -144,7 +186,7 @@
       <p class="status">No fixtures captured yet.</p>
     {:else}
       <ul>
-        {#each fixtures.slice(0, 10) as fixture (`fixture-${fixture.id}`)}
+        {#each fixtures.slice(0, 5) as fixture}
           <li>
             <div class="meta">
               <span class="title">{fixture.title || 'Untitled page'}</span>
@@ -230,12 +272,9 @@
     color: #fff;
   }
 
-  button:disabled {
-    cursor: default;
-  }
-
   button.primary:disabled {
     background: #9cb5f1;
+    cursor: default;
   }
 
   button.secondary {
@@ -246,6 +285,7 @@
   button.secondary:disabled {
     background: #e6ecf4;
     color: #9aa5b1;
+    cursor: default;
   }
 
   .error {

@@ -1,9 +1,11 @@
+// entrypoints/popup/main.ts
+
 import { mount } from 'svelte';
 import App from './App.svelte';
-import './app.css';
 
-const app = mount(App, {
-  target: document.getElementById('app')!,
-});
+// The target element is guaranteed to exist by the index.html file
+const target = document.getElementById('app')!;
+
+const app = mount(App, { target });
 
 export default app;
