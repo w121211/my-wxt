@@ -1,16 +1,8 @@
-// lib/types/assistants.ts
+// lib/types/automators.ts
 // Domain types for AI assistant integrations
 // (data models only, no message types)
 
-// ============================================================================
-// Assistant Identity
-// ============================================================================
-
-export type AssistantId = 'chatgpt' | 'claude' | 'gemini' | 'grok';
-
-// ============================================================================
-// Authentication & Session
-// ============================================================================
+export type AiAssistantId = "chatgpt" | "claude" | "gemini" | "grok";
 
 export interface LoginWaitOptions {
   readonly timeoutMs?: number;
@@ -18,18 +10,14 @@ export interface LoginWaitOptions {
 }
 
 export interface LoginState {
-  readonly assistantId: AssistantId;
+  readonly assistantId: AiAssistantId;
   readonly authenticated: boolean;
   readonly defaultModelId?: string;
   readonly availableModelIds?: readonly string[];
   readonly message?: string;
 }
 
-// ============================================================================
-// Chat Data Models
-// ============================================================================
-
-export interface ChatSummary {
+export interface ChatEntry {
   readonly id: string;
   readonly title: string;
   readonly url: string;
@@ -39,13 +27,13 @@ export interface ChatSummary {
 
 export interface ChatMessage {
   readonly id: string;
-  readonly role: 'user' | 'assistant' | 'system' | 'tool';
+  readonly role: "user" | "assistant" | "system" | "tool";
   readonly createdAt: string;
   readonly contentMarkdown: string;
   readonly contentHtml?: string;
 }
 
-export interface ChatDetails {
+export interface ChatPage {
   readonly id: string;
   readonly title: string;
   readonly url: string;
@@ -59,10 +47,6 @@ export interface ChatTarget {
   readonly url?: string;
   readonly modelId?: string;
 }
-
-// ============================================================================
-// Prompt Submission & Response
-// ============================================================================
 
 export interface PromptSubmission {
   readonly promptId: string;
@@ -87,37 +71,33 @@ export interface ChatResponse {
   readonly usage?: Record<string, number>;
 }
 
-// ============================================================================
-// Error Handling
-// ============================================================================
-
 export interface ChatError {
   readonly code:
-    | 'not-logged-in'
-    | 'unsupported'
-    | 'navigation-failed'
-    | 'prompt-failed'
-    | 'timeout'
-    | 'unexpected';
+    | "not-logged-in"
+    | "unsupported"
+    | "navigation-failed"
+    | "prompt-failed"
+    | "timeout"
+    | "unexpected";
   readonly message: string;
   readonly promptId?: string;
   readonly details?: Record<string, unknown>;
 }
 
-// ============================================================================
-// Extractor Interface
-// ============================================================================
-
 /**
- * Interface that all assistant extractors must implement
+ * Interface that all assistant automators must implement
  * Defines the contract for interacting with AI assistant websites
  */
-export interface AssistantExtractor {
+export interface AiAssistantAutomator {
+  // Extractors
+  extractChatEntries(): Promise<readonly ChatEntry[]>;
+  extractChatPage(target: ChatTarget): Promise<ChatPage>;
+
+  // Actions
   waitForLoggedIn(options: LoginWaitOptions): Promise<LoginState>;
-  extractChatList(): Promise<readonly ChatSummary[]>;
   openChat(target: ChatTarget): Promise<void>;
-  extractChat(target: ChatTarget): Promise<ChatDetails>;
   sendPrompt(request: PromptSubmission): Promise<void>;
+
   watchResponse(
     request: PromptSubmission,
     handleDelta: (delta: ChatDelta) => void

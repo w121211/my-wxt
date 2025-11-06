@@ -1,13 +1,13 @@
 // lib/services/websocket/router.ts
 
 import { browser } from 'wxt/browser';
-import type { AssistantId, PromptSubmission, ChatTarget } from '../../types/assistants';
+import type { AiAssistantId, PromptSubmission, ChatTarget } from '../../types/automators';
 import type { ServerMessage, ExtensionMessage } from '../../types/websocket';
 import type { BackgroundToContentCommand } from '../../types/runtime';
 import type { WebsocketClient } from './client';
 
 const assistantTargets: Record<
-  AssistantId,
+  AiAssistantId,
   { readonly urlPatterns: readonly string[]; readonly homeUrl: string }
 > = {
   chatgpt: {
@@ -29,18 +29,18 @@ const assistantTargets: Record<
 };
 
 type AssistantTab = {
-  readonly assistant: AssistantId;
+  readonly assistant: AiAssistantId;
   readonly tabId: number;
 };
 
 type PendingPrompt = {
   readonly request: PromptSubmission;
-  readonly assistant: AssistantId;
+  readonly assistant: AiAssistantId;
   readonly tabId: number;
 };
 
 export class WebsocketRouter {
-  private desiredAssistant: AssistantId = 'chatgpt';
+  private desiredAssistant: AiAssistantId = 'chatgpt';
   private lastKnownAssistantTab: AssistantTab | null = null;
   private readonly pendingPrompts = new Map<string, PendingPrompt>();
 
@@ -83,7 +83,7 @@ export class WebsocketRouter {
     }
   };
 
-  private async handleSubmitPrompt(assistant: AssistantId, request: PromptSubmission) {
+  private async handleSubmitPrompt(assistant: AiAssistantId, request: PromptSubmission) {
     const tabId = await this.ensureAssistantTab(assistant, request.conversation?.url);
     if (tabId === null) {
       this.send({
@@ -112,7 +112,7 @@ export class WebsocketRouter {
   }
 
   private async ensureAssistantTab(
-    assistant: AssistantId,
+    assistant: AiAssistantId,
     preferredUrl?: string
   ): Promise<number | null> {
     if (this.lastKnownAssistantTab?.assistant === assistant) {
@@ -160,7 +160,7 @@ export class WebsocketRouter {
     return created.id;
   }
 
-  private async dispatchToContent(assistant: AssistantId, command: BackgroundToContentCommand) {
+  private async dispatchToContent(assistant: AiAssistantId, command: BackgroundToContentCommand) {
     const tabId = await this.ensureAssistantTab(assistant);
     if (tabId === null) {
       this.send({

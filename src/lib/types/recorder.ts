@@ -2,7 +2,7 @@
 // Domain types for the DOM recording feature
 // (data models only, no message types)
 
-import type { AssistantId } from './assistants';
+import type { AssistantId } from './automators';
 
 // ============================================================================
 // Recorder Data Models

@@ -1,9 +1,8 @@
 // entrypoints/content.ts
 
 import { browser } from 'wxt/browser';
-import { resolveExtractor } from '../lib/assistants/registry';
-import { detectAssistantFromHost } from '../lib/assistants/hosts';
-import type { AssistantExtractor, AssistantId } from '../lib/types/assistants';
+import { createAutomatorForCurrentPage, detectAssistantFromUrl } from '../lib/services/automators';
+import type { AiAssistantAutomator, AiAssistantId } from '../lib/types/automators';
 import type {
   BackgroundToContentCommand,
   ContentToBackgroundNotification,
@@ -20,7 +19,7 @@ export default defineContentScript({
     '*://www.grok.com/*',
   ],
   async main() {
-    const assistantId = detectAssistantFromHost(window.location.hostname);
+    const assistantId = detectAssistantFromUrl(window.location.href);
     if (!assistantId) {
       return;
     }
@@ -38,37 +37,43 @@ export default defineContentScript({
         return;
       }
 
-      let extractor: AssistantExtractor;
+      let automator: AiAssistantAutomator | null;
       try {
-        extractor = resolveExtractor(assistantId);
+        automator = createAutomatorForCurrentPage();
       } catch (error) {
         // This is expected for assistants that are not yet implemented.
         // We can ignore this error for now, as the recorder will still work.
         return;
       }
 
+      if (!automator) {
+        return;
+      }
+
       switch (command.type) {
         case 'assistant:extract-chat-list':
-          handleExtractChatList(extractor, assistantId);
+          handleExtractChatList(automator, assistantId);
           break;
         case 'assistant:extract-chat':
-          handleExtractChat(extractor, assistantId, command.payload);
+          handleExtractChat(automator, assistantId, command.payload);
           break;
         case 'assistant:process-prompt':
-          handleProcessPrompt(extractor, assistantId, command.payload);
+          handleProcessPrompt(automator, assistantId, command.payload);
           break;
       }
     });
 
-    // Perform initial login check, but don't crash if the extractor is missing
+    // Perform initial login check, but don't crash if the automator is missing
     try {
-      const extractor = resolveExtractor(assistantId);
-      initializeLoginState(extractor, assistantId);
+      const automator = createAutomatorForCurrentPage();
+      if (automator) {
+        initializeLoginState(automator, assistantId);
+      }
     } catch (error) {
       // This is expected, so we don't need to log an error.
       // A warning could be useful for debugging.
       console.warn(
-        `Skipping initial login state check for "${assistantId}": extractor not implemented.`,
+        `Skipping initial login state check for "${assistantId}": automator not implemented.`,
       );
     }
   },
@@ -78,8 +83,8 @@ const sendNotification = (notification: ContentToBackgroundNotification) => {
   return browser.runtime.sendMessage(notification);
 };
 
-const notifyExtractorError = (
-  assistantId: AssistantId,
+const notifyAutomatorError = (
+  assistantId: AiAssistantId,
   error: unknown,
   context: string,
   promptId?: string
@@ -95,59 +100,59 @@ const notifyExtractorError = (
   });
 };
 
-const initializeLoginState = async (extractor: AssistantExtractor, assistantId: AssistantId) => {
+const initializeLoginState = async (automator: AiAssistantAutomator, assistantId: AiAssistantId) => {
   try {
-    const state = await extractor.waitForLoggedIn({ timeoutMs: 10_000, pollIntervalMs: 500 });
+    const state = await automator.waitForLoggedIn({ timeoutMs: 10_000, pollIntervalMs: 500 });
     await sendNotification({ type: 'assistant:login-state', assistantId, payload: state });
   } catch (error) {
-    await notifyExtractorError(assistantId, error, 'waitForLoggedIn');
+    await notifyAutomatorError(assistantId, error, 'waitForLoggedIn');
   }
 };
 
-const handleExtractChatList = async (extractor: AssistantExtractor, assistantId: AssistantId) => {
+const handleExtractChatList = async (automator: AiAssistantAutomator, assistantId: AiAssistantId) => {
   try {
-    const chats = await extractor.extractChatList();
+    const chats = await automator.extractChatEntries();
     await sendNotification({ type: 'chat:list', assistantId, payload: chats });
   } catch (error) {
-    await notifyExtractorError(assistantId, error, 'extractChatList');
+    await notifyAutomatorError(assistantId, error, 'extractChatEntries');
   }
 };
 
 const handleExtractChat = async (
-  extractor: AssistantExtractor,
-  assistantId: AssistantId,
+  automator: AiAssistantAutomator,
+  assistantId: AiAssistantId,
   target: any
 ) => {
   try {
-    const details = await extractor.extractChat(target);
+    const details = await automator.extractChatPage(target);
     await sendNotification({ type: 'chat:details', assistantId, payload: details });
   } catch (error) {
-    await notifyExtractorError(assistantId, error, 'extractChat');
+    await notifyAutomatorError(assistantId, error, 'extractChatPage');
   }
 };
 
 const handleProcessPrompt = async (
-  extractor: AssistantExtractor,
-  assistantId: AssistantId,
+  automator: AiAssistantAutomator,
+  assistantId: AiAssistantId,
   request: any
 ) => {
   try {
     if (request.conversation) {
-      await extractor.openChat(request.conversation);
+      await automator.openChat(request.conversation);
     }
-    await extractor.sendPrompt(request);
-    const response = await extractor.watchResponse(request, (delta) => {
+    await automator.sendPrompt(request);
+    const response = await automator.watchResponse(request, (delta) => {
       void sendNotification({ type: 'chat:delta', assistantId, payload: delta });
     });
     await sendNotification({ type: 'chat:response', assistantId, payload: response });
   } catch (error) {
-    await notifyExtractorError(assistantId, error, 'sendPrompt', request.promptId);
+    await notifyAutomatorError(assistantId, error, 'sendPrompt', request.promptId);
   }
 };
 
 const handleRecorderCapture = (
-  requestedAssistantId: AssistantId | 'unknown',
-  detectedAssistantId: AssistantId
+  requestedAssistantId: AiAssistantId | 'unknown',
+  detectedAssistantId: AiAssistantId
 ) => {
   const targetAssistant = requestedAssistantId === 'unknown' ? detectedAssistantId : requestedAssistantId;
   const html = document.documentElement?.outerHTML ?? '';

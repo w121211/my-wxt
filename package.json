@@ -16,6 +16,7 @@
   },
   "devDependencies": {
     "@tsconfig/svelte": "^5.0.5",
+    "@types/micromatch": "^4.0.10",
     "@wxt-dev/module-svelte": "^2.0.3",
     "svelte": "^5.38.6",
     "svelte-check": "^4.3.1",
@@ -24,6 +25,7 @@
     "wxt": "^0.20.6"
   },
   "dependencies": {
-    "jszip": "^3.10.1"
+    "jszip": "^3.10.1",
+    "micromatch": "^4.0.8"
   }
 }
