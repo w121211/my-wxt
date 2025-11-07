@@ -138,8 +138,8 @@ export const selectors = {
 export class ChatgptAutomator implements AiAssistantAutomator {
   static readonly id = "chatgpt" as const;
   static readonly urlGlobs = [
-    "*://chat.openai.com/*",
     "*://chatgpt.com/*",
+    "*://chat.openai.com/*",
   ] as const;
   static readonly url = "https://chatgpt.com/";
 

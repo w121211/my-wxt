@@ -2,6 +2,7 @@
 
 import { browser } from "wxt/browser";
 import { getAutomatorByUrl } from "../lib/services/automators/registry";
+import { snapshotAria } from "../lib/utils/aria-snapshot";
 import type {
   AiAssistantAutomator,
   AiAssistantId,
@@ -10,7 +11,8 @@ import type {
   BackgroundToContentCommand,
   ContentToBackgroundNotification,
 } from "../lib/types/runtime";
-import type { RecorderFixture } from "../lib/types/recorder";
+import { snapshotHtml } from "@/lib/utils/html-snapshot";
+import { snapshotYaml } from "@/lib/utils/yaml-snapshot";
 
 export default defineContentScript({
   matches: [
@@ -19,15 +21,25 @@ export default defineContentScript({
     "*://claude.ai/*",
     "*://gemini.google.com/*",
     "*://aistudio.google.com/*",
-    "*://*.x.com/*",
-    "*://twitter.com/*",
+    "*://grok.com/*",
   ],
   async main() {
+    // console.log("[my-wxt] content script main() started");
     const automator = getAutomatorByUrl(window.location.href);
     if (!automator) {
+      console.log("[my-wxt] no automator found for this URL");
       return;
     }
+    console.log("[my-wxt] automator found:", automator.id);
     const assistantId = automator.id;
+
+    // Expose automator to window for DevTools inspector
+    (window as any).__automator__ = automator;
+    (window as any).__snapshotAria__ = snapshotAria;
+    (window as any).__snapshotHtml__ = snapshotYaml;
+    console.log(
+      "[my-wxt] __automator__, __snapshotAria__, __snapshotHtml__ exposed to window"
+    );
 
     // Listen for commands from the background script
     browser.runtime.onMessage.addListener(
@@ -161,27 +173,4 @@ const handleProcessPrompt = async (
       request.promptId
     );
   }
-};
-
-const handleRecorderCapture = (
-  requestedAssistantId: AiAssistantId | "unknown",
-  detectedAssistantId: AiAssistantId
-) => {
-  const targetAssistant =
-    requestedAssistantId === "unknown"
-      ? detectedAssistantId
-      : requestedAssistantId;
-  const html = document.documentElement?.outerHTML ?? "";
-  const fixture: RecorderFixture = {
-    id:
-      typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `fixture-${Date.now()}`,
-    assistantId: targetAssistant,
-    capturedAt: new Date().toISOString(),
-    url: window.location.href,
-    title: document.title,
-    html,
-  };
-  void sendNotification({ type: "recorder:fixture", payload: fixture });
 };

@@ -2,7 +2,7 @@
 // Domain types for the DOM recording feature
 // (data models only, no message types)
 
-import type { AssistantId } from './automators';
+// import type { AssistantId } from './automators';
 
 // ============================================================================
 // Recorder Data Models
@@ -13,7 +13,7 @@ import type { AssistantId } from './automators';
  */
 export interface RecorderFixture {
   readonly id: string;
-  readonly assistantId: AssistantId | 'unknown';
+  // readonly assistantId: AssistantId | "unknown";
   readonly capturedAt: string;
   readonly url: string;
   readonly title: string;
@@ -26,7 +26,7 @@ export interface RecorderFixture {
  */
 export interface RecorderFixtureMeta {
   readonly id: string;
-  readonly assistantId: AssistantId | 'unknown';
+  // readonly assistantId: AssistantId | "unknown";
   readonly capturedAt: string;
   readonly url: string;
   readonly title: string;

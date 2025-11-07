@@ -1,7 +1,6 @@
 // lib/services/automators/registry.ts
 // Central registry for all automator instances and helper functions
 
-import { isMatch } from "micromatch";
 import { ChatgptAutomator } from "./chatgpt-automator";
 import { ClaudeAutomator } from "./claude-extractor";
 import { GeminiAutomator } from "./gemini-extractor";
@@ -37,19 +36,32 @@ export function getAutomatorById(id: AiAssistantId): AiAssistantAutomator {
 }
 
 /**
+ * Convert URL glob pattern to regex pattern
+ * Supports patterns like: *://chatgpt.com/* or *://x.com/i/grok*
+ */
+function urlGlobToRegex(glob: string): RegExp {
+  // Escape special regex characters except * and :
+  let pattern = glob.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+
+  return new RegExp(`^${pattern}$`);
+}
+
+/**
  * Detect which assistant ID from URL
  */
 export function detectAssistantIdFromUrl(url: string): AiAssistantId | null {
-  if (ChatgptAutomator.urlGlobs.some((glob) => isMatch(url, glob))) {
+  if (
+    ChatgptAutomator.urlGlobs.some((glob) => urlGlobToRegex(glob).test(url))
+  ) {
     return ChatgptAutomator.id;
   }
-  if (ClaudeAutomator.urlGlobs.some((glob) => isMatch(url, glob))) {
+  if (ClaudeAutomator.urlGlobs.some((glob) => urlGlobToRegex(glob).test(url))) {
     return ClaudeAutomator.id;
   }
-  if (GeminiAutomator.urlGlobs.some((glob) => isMatch(url, glob))) {
+  if (GeminiAutomator.urlGlobs.some((glob) => urlGlobToRegex(glob).test(url))) {
     return GeminiAutomator.id;
   }
-  if (GrokAutomator.urlGlobs.some((glob) => isMatch(url, glob))) {
+  if (GrokAutomator.urlGlobs.some((glob) => urlGlobToRegex(glob).test(url))) {
     return GrokAutomator.id;
   }
   return null;
@@ -59,20 +71,8 @@ export function detectAssistantIdFromUrl(url: string): AiAssistantId | null {
  * Get automator instance by URL (convenience wrapper)
  */
 export function getAutomatorByUrl(url: string): AiAssistantAutomator | null {
+  console.debug(url);
+
   const assistantId = detectAssistantIdFromUrl(url);
   return assistantId ? getAutomatorById(assistantId) : null;
 }
-
-// /**
-//  * Get all automator instances
-//  */
-// export function getAllAutomators(): readonly AiAssistantAutomator[] {
-//   return [chatgptAutomator, claudeAutomator, geminiAutomator, grokAutomator];
-// }
-
-// /**
-//  * Get all assistant IDs
-//  */
-// export function getAllAssistantIds(): readonly AiAssistantId[] {
-//   return ["chatgpt", "claude", "gemini", "grok"];
-// }

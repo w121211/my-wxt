@@ -9,12 +9,10 @@ import type {
 import type { ServerMessage, ExtensionMessage } from "../../types/websocket";
 import type { BackgroundToContentCommand } from "../../types/runtime";
 import type { WebsocketClient } from "./client";
-import {
-  ChatGPTAutomator,
-  ClaudeAutomator,
-  GeminiAutomator,
-  GrokAutomator,
-} from "../automators/registry";
+import { ChatgptAutomator } from "../automators/chatgpt-automator";
+import { ClaudeAutomator } from "../automators/claude-extractor";
+import { GeminiAutomator } from "../automators/gemini-extractor";
+import { GrokAutomator } from "../automators/grok-automator";
 
 type AssistantTab = {
   readonly assistant: AiAssistantId;
@@ -203,7 +201,7 @@ export class WebsocketRouter {
   private getAutomatorClass(assistant: AiAssistantId) {
     switch (assistant) {
       case "chatgpt":
-        return ChatGPTAutomator;
+        return ChatgptAutomator;
       case "claude":
         return ClaudeAutomator;
       case "gemini":
