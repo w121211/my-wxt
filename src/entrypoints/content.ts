@@ -1,81 +1,64 @@
 // entrypoints/content.ts
 
-import { browser } from 'wxt/browser';
-import { createAutomatorForCurrentPage, detectAssistantFromUrl } from '../lib/services/automators';
-import type { AiAssistantAutomator, AiAssistantId } from '../lib/types/automators';
+import { browser } from "wxt/browser";
+import { getAutomatorByUrl } from "../lib/services/automators/registry";
+import type {
+  AiAssistantAutomator,
+  AiAssistantId,
+} from "../lib/types/automators";
 import type {
   BackgroundToContentCommand,
   ContentToBackgroundNotification,
-} from '../lib/types/runtime';
-import type { RecorderFixture } from '../lib/types/recorder';
+} from "../lib/types/runtime";
+import type { RecorderFixture } from "../lib/types/recorder";
 
 export default defineContentScript({
   matches: [
-    '*://chatgpt.com/*',
-    '*://www.chatgpt.com/*',
-    '*://claude.ai/*',
-    '*://gemini.google.com/*',
-    '*://grok.com/*',
-    '*://www.grok.com/*',
+    "*://chat.openai.com/*",
+    "*://chatgpt.com/*",
+    "*://claude.ai/*",
+    "*://gemini.google.com/*",
+    "*://aistudio.google.com/*",
+    "*://*.x.com/*",
+    "*://twitter.com/*",
   ],
   async main() {
-    const assistantId = detectAssistantFromUrl(window.location.href);
-    if (!assistantId) {
+    const automator = getAutomatorByUrl(window.location.href);
+    if (!automator) {
       return;
     }
+    const assistantId = automator.id;
 
     // Listen for commands from the background script
-    browser.runtime.onMessage.addListener((command: BackgroundToContentCommand) => {
-      // Recorder command can run on any page, even if the assistant isn't fully supported
-      if (command.type === 'recorder:capture') {
-        handleRecorderCapture(command.assistantId, assistantId);
-        return;
-      }
+    browser.runtime.onMessage.addListener(
+      (command: BackgroundToContentCommand) => {
+        // Recorder command can run on any page, even if the assistant isn't fully supported
+        // if (command.type === 'recorder:capture') {
+        //   handleRecorderCapture(command.assistantId, assistantId);
+        //   return;
+        // }
 
-      // All other commands are assistant-specific
-      if (command.assistantId !== assistantId) {
-        return;
-      }
+        // All other commands are assistant-specific
+        if (command.assistantId !== assistantId) {
+          return;
+        }
 
-      let automator: AiAssistantAutomator | null;
-      try {
-        automator = createAutomatorForCurrentPage();
-      } catch (error) {
-        // This is expected for assistants that are not yet implemented.
-        // We can ignore this error for now, as the recorder will still work.
-        return;
+        switch (command.type) {
+          case "assistant:extract-chat-list":
+            handleExtractChatList(automator, assistantId);
+            break;
+          case "assistant:extract-chat":
+            handleExtractChat(automator, assistantId, command.payload);
+            break;
+          case "assistant:process-prompt":
+            handleProcessPrompt(automator, assistantId, command.payload);
+            break;
+        }
       }
+    );
 
-      if (!automator) {
-        return;
-      }
-
-      switch (command.type) {
-        case 'assistant:extract-chat-list':
-          handleExtractChatList(automator, assistantId);
-          break;
-        case 'assistant:extract-chat':
-          handleExtractChat(automator, assistantId, command.payload);
-          break;
-        case 'assistant:process-prompt':
-          handleProcessPrompt(automator, assistantId, command.payload);
-          break;
-      }
-    });
-
-    // Perform initial login check, but don't crash if the automator is missing
-    try {
-      const automator = createAutomatorForCurrentPage();
-      if (automator) {
-        initializeLoginState(automator, assistantId);
-      }
-    } catch (error) {
-      // This is expected, so we don't need to log an error.
-      // A warning could be useful for debugging.
-      console.warn(
-        `Skipping initial login state check for "${assistantId}": automator not implemented.`,
-      );
-    }
+    // Perform initial login check
+    initializeLoginState(automator, assistantId);
   },
 });
 
@@ -90,31 +73,44 @@ const notifyAutomatorError = (
   promptId?: string
 ) => {
   return sendNotification({
-    type: 'chat:error',
+    type: "chat:error",
     assistantId,
     payload: {
-      code: 'unexpected',
+      code: "unexpected",
       message: `${context} failed: ${error}`,
       details: { context, promptId },
     },
   });
 };
 
-const initializeLoginState = async (automator: AiAssistantAutomator, assistantId: AiAssistantId) => {
+const initializeLoginState = async (
+  automator: AiAssistantAutomator,
+  assistantId: AiAssistantId
+) => {
   try {
-    const state = await automator.waitForLoggedIn({ timeoutMs: 10_000, pollIntervalMs: 500 });
-    await sendNotification({ type: 'assistant:login-state', assistantId, payload: state });
+    const state = await automator.waitForLoggedIn({
+      timeoutMs: 10_000,
+      pollIntervalMs: 500,
+    });
+    await sendNotification({
+      type: "assistant:login-state",
+      assistantId,
+      payload: state,
+    });
   } catch (error) {
-    await notifyAutomatorError(assistantId, error, 'waitForLoggedIn');
+    await notifyAutomatorError(assistantId, error, "waitForLoggedIn");
   }
 };
 
-const handleExtractChatList = async (automator: AiAssistantAutomator, assistantId: AiAssistantId) => {
+const handleExtractChatList = async (
+  automator: AiAssistantAutomator,
+  assistantId: AiAssistantId
+) => {
   try {
     const chats = await automator.extractChatEntries();
-    await sendNotification({ type: 'chat:list', assistantId, payload: chats });
+    await sendNotification({ type: "chat:list", assistantId, payload: chats });
   } catch (error) {
-    await notifyAutomatorError(assistantId, error, 'extractChatEntries');
+    await notifyAutomatorError(assistantId, error, "extractChatEntries");
   }
 };
 
@@ -125,9 +121,13 @@ const handleExtractChat = async (
 ) => {
   try {
     const details = await automator.extractChatPage(target);
-    await sendNotification({ type: 'chat:details', assistantId, payload: details });
+    await sendNotification({
+      type: "chat:details",
+      assistantId,
+      payload: details,
+    });
   } catch (error) {
-    await notifyAutomatorError(assistantId, error, 'extractChatPage');
+    await notifyAutomatorError(assistantId, error, "extractChatPage");
   }
 };
 
@@ -142,27 +142,46 @@ const handleProcessPrompt = async (
     }
     await automator.sendPrompt(request);
     const response = await automator.watchResponse(request, (delta) => {
-      void sendNotification({ type: 'chat:delta', assistantId, payload: delta });
+      void sendNotification({
+        type: "chat:delta",
+        assistantId,
+        payload: delta,
+      });
     });
-    await sendNotification({ type: 'chat:response', assistantId, payload: response });
+    await sendNotification({
+      type: "chat:response",
+      assistantId,
+      payload: response,
+    });
   } catch (error) {
-    await notifyAutomatorError(assistantId, error, 'sendPrompt', request.promptId);
+    await notifyAutomatorError(
+      assistantId,
+      error,
+      "sendPrompt",
+      request.promptId
+    );
   }
 };
 
 const handleRecorderCapture = (
-  requestedAssistantId: AiAssistantId | 'unknown',
+  requestedAssistantId: AiAssistantId | "unknown",
   detectedAssistantId: AiAssistantId
 ) => {
-  const targetAssistant = requestedAssistantId === 'unknown' ? detectedAssistantId : requestedAssistantId;
-  const html = document.documentElement?.outerHTML ?? '';
+  const targetAssistant =
+    requestedAssistantId === "unknown"
+      ? detectedAssistantId
+      : requestedAssistantId;
+  const html = document.documentElement?.outerHTML ?? "";
   const fixture: RecorderFixture = {
-    id: typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `fixture-${Date.now()}`,
+    id:
+      typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `fixture-${Date.now()}`,
     assistantId: targetAssistant,
     capturedAt: new Date().toISOString(),
     url: window.location.href,
     title: document.title,
     html,
   };
-  void sendNotification({ type: 'recorder:fixture', payload: fixture });
+  void sendNotification({ type: "recorder:fixture", payload: fixture });
 };

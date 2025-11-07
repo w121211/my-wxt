@@ -23,8 +23,15 @@ import {
   extractData,
   waitForCondition,
 } from "../../utils/selectors";
+import { SelectorMap } from "./types";
 
-const selectors = {
+type MessageData = {
+  role: string;
+  content: string;
+  contentMarkdown: string;
+};
+
+export const selectors = {
   // Authentication
   loginIndicator: [
     'button[data-testid="profile-button"]',
@@ -128,23 +135,31 @@ const selectors = {
   errorMessage: ['div[class*="error"]', 'div[role="alert"]'],
 };
 
-export class ChatGPTAutomator implements AiAssistantAutomator {
-  readonly id = "chatgpt" as const;
-  readonly urlGlobs = ["*://chat.openai.com/*", "*://chatgpt.com/*"];
+export class ChatgptAutomator implements AiAssistantAutomator {
+  static readonly id = "chatgpt" as const;
+  static readonly urlGlobs = [
+    "*://chat.openai.com/*",
+    "*://chatgpt.com/*",
+  ] as const;
+  static readonly url = "https://chatgpt.com/";
+
+  readonly id = ChatgptAutomator.id;
+  readonly urlGlobs = ChatgptAutomator.urlGlobs;
+  readonly url = ChatgptAutomator.url;
   readonly selectors = selectors;
 
-  private readonly config = {
-    defaultTimeout: 30000,
-    pollInterval: 100,
-    // generateMessageId: (index: number, element: Element) => {
-    //   // Try to extract actual message ID from data attributes
-    //   const dataId = element.getAttribute("data-message-id");
-    //   if (dataId) return dataId;
+  // private readonly config = {
+  //   defaultTimeout: 30000,
+  //   pollInterval: 100,
+  //   // generateMessageId: (index: number, element: Element) => {
+  //   //   // Try to extract actual message ID from data attributes
+  //   //   const dataId = element.getAttribute("data-message-id");
+  //   //   if (dataId) return dataId;
 
-    //   // Fallback to index-based ID
-    //   return `msg-${index}`;
-    // },
-  };
+  //   //   // Fallback to index-based ID
+  //   //   return `msg-${index}`;
+  //   // },
+  // };
 
   /**
    * Wait for user to be logged in
@@ -182,22 +197,26 @@ export class ChatGPTAutomator implements AiAssistantAutomator {
    * Extract list of recent chats
    */
   async extractChatEntries(): Promise<readonly ChatEntry[]> {
-    const chatItems = querySelectorAll(this.selectors.chatItems || []);
+    const chatItems = querySelectorAll(this.selectors.chatItems);
 
     const entries: ChatEntry[] = [];
 
     for (const [index, item] of chatItems.entries()) {
       try {
-        const data = extractData(item, this.selectors.chatItemData || {});
+        const data = extractData<{
+          title: string | null;
+          url: string | null;
+          chatId: string | null;
+        }>(item, this.selectors.chatItemData || {});
 
-        const url = item.getAttribute("href");
-        const id = this.extractChatIdFromUrl(url);
+        // const url = item.getAttribute("href");
+        const id = this.extractChatIdFromUrl(data?.url ?? null);
 
         entries.push({
           id: id || `chat-${index}`,
           title: data?.title || getText(item) || "Untitled Chat",
-          url: url
-            ? new URL(url, window.location.origin).href
+          url: data?.url
+            ? new URL(data?.url, window.location.origin).href
             : window.location.href,
           updatedAt: new Date().toISOString(), // ChatGPT doesn't expose this easily
         });
@@ -263,9 +282,11 @@ export class ChatGPTAutomator implements AiAssistantAutomator {
    */
   async extractChatPage(target: ChatTarget): Promise<ChatPage> {
     // Extract chat metadata
-    const chatTitle = getText(
-      querySelector(this.selectors.chatTitle || []) || document.body
-    );
+    // const chatTitle = getText(
+    //   querySelector(this.selectors.chatTitle || []) || document.body
+    // );
+    const chatTitle = querySelector(this.selectors.chatTitle);
+    const chatTitleText = chatTitle ? getText(chatTitle) : "Unknown";
     const id =
       target.id || this.extractChatIdFromUrl(window.location.href) || "current";
     const url = window.location.href;
@@ -276,7 +297,10 @@ export class ChatGPTAutomator implements AiAssistantAutomator {
 
     for (const [index, element] of messageElements.entries()) {
       try {
-        const data = extractData(element, this.selectors.messageData);
+        const data = extractData<MessageData>(
+          element,
+          this.selectors.messageData
+        );
 
         // const messageId =
         // this.config?.generateMessageId?.(index, element) || `msg-${index}`;
@@ -296,7 +320,7 @@ export class ChatGPTAutomator implements AiAssistantAutomator {
 
     return {
       id,
-      title: chatTitle || "ChatGPT Conversation",
+      title: chatTitleText,
       url,
       modelId: target.modelId || (await this.extractDefaultModel()),
       updatedAt: new Date().toISOString(),
@@ -372,12 +396,12 @@ export class ChatGPTAutomator implements AiAssistantAutomator {
       const observer = new MutationObserver(() => {
         try {
           const streamingElement = querySelector(
-            this.selectors.streamingMessage || []
+            this.selectors.streamingMessage
           );
 
           if (!streamingElement) return;
 
-          const data = extractData(
+          const data = extractData<MessageData>(
             streamingElement,
             this.selectors.messageData
           );
@@ -475,8 +499,8 @@ export class ChatGPTAutomator implements AiAssistantAutomator {
 
   private normalizeRole(
     role: string | undefined
-  ): "user" | "assistant" | "system" | "tool" {
-    if (!role) return "assistant";
+  ): "user" | "assistant" | "system" | "tool" | "unknown" {
+    if (!role) return "unknown";
 
     const normalized = role.toLowerCase();
     if (normalized === "user") return "user";
@@ -484,7 +508,7 @@ export class ChatGPTAutomator implements AiAssistantAutomator {
     if (normalized === "system") return "system";
     if (normalized === "tool") return "tool";
 
-    return "assistant"; // Default fallback
+    return "unknown"; // Default fallback
   }
 
   private createError(

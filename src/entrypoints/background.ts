@@ -4,7 +4,7 @@ import { browser } from "wxt/browser";
 import { WebsocketClient } from "../lib/services/websocket/client";
 import { WebsocketRouter } from "../lib/services/websocket/router";
 // import { RecorderService } from '../lib/services/recorder/service';
-import { detectAssistantFromUrl } from "../lib/services/automators";
+import { detectAssistantIdFromUrl } from "../lib/services/automators/registry";
 import type {
   ContentToBackgroundNotification,
   RuntimeMessage,
@@ -15,6 +15,7 @@ export default defineBackground(() => {
 
   let router: WebsocketRouter;
   const client = new WebsocketClient((message) => {
+    console.log(message);
     router.handleMessage(message);
   });
   router = new WebsocketRouter(client);

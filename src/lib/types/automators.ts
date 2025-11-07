@@ -2,6 +2,8 @@
 // Domain types for AI assistant integrations
 // (data models only, no message types)
 
+import { SelectorMap } from "../services/automators/types";
+
 export type AiAssistantId = "chatgpt" | "claude" | "gemini" | "grok";
 
 export interface LoginWaitOptions {
@@ -27,7 +29,7 @@ export interface ChatEntry {
 
 export interface ChatMessage {
   readonly id: string;
-  readonly role: "user" | "assistant" | "system" | "tool";
+  readonly role: "user" | "assistant" | "system" | "tool" | "unknown";
   readonly createdAt: string;
   readonly contentMarkdown: string;
   readonly contentHtml?: string;
@@ -89,6 +91,11 @@ export interface ChatError {
  * Defines the contract for interacting with AI assistant websites
  */
 export interface AiAssistantAutomator {
+  readonly id: AiAssistantId;
+  readonly url: string;
+  readonly urlGlobs: readonly string[];
+  readonly selectors: SelectorMap;
+
   // Extractors
   extractChatEntries(): Promise<readonly ChatEntry[]>;
   extractChatPage(target: ChatTarget): Promise<ChatPage>;

@@ -22,116 +22,123 @@ import {
   extractData,
   waitForCondition,
 } from "../../utils/selectors";
+import { SelectorMap } from "./types";
 import { watchStreamingResponse } from "./utils/stream-observer";
 
+export const selectors = {
+  // Authentication
+  loginIndicator: [
+    'button[data-testid="user-menu-button"]',
+    'div[data-testid="user-avatar"]',
+    'button:has(img[alt*="profile"])',
+  ],
+
+  modelSelector: [
+    'button[aria-label*="model"]',
+    'div[class*="model-selector"]',
+  ],
+
+  modelName: ['button[aria-label*="model"] span', 'div[class*="model-name"]'],
+
+  // Chat List
+  chatListContainer: [
+    'div[data-testid="chat-list"]',
+    "aside nav",
+    'div[class*="sidebar"] div[class*="conversations"]',
+  ],
+
+  chatItems: [
+    'div[data-testid="chat-item"]',
+    "aside nav a",
+    'div[class*="conversation-item"]',
+  ],
+
+  chatItemData: {
+    fields: {
+      title: {
+        selector: ['div[class*="title"]', "span"],
+        attr: "textContent",
+      },
+      url: {
+        attr: "href",
+      },
+    },
+  },
+
+  newChatButton: [
+    'button[data-testid="new-chat-button"]',
+    'button:has-text("New Chat")',
+    'a[href*="/new"]',
+  ],
+
+  // Chat View
+  chatTitle: ["h1", 'div[class*="chat-title"]', "header h1"],
+
+  messageBlocks: [
+    'div[data-testid="message"]',
+    'div[class*="message-block"]',
+    "div[data-role]",
+  ],
+
+  messageData: {
+    fields: {
+      role: {
+        attr: "data-role",
+      },
+      content: {
+        selector: [
+          'div[class*="content"]',
+          'div[class*="markdown"]',
+          "div.prose",
+        ],
+        attr: "innerHTML",
+      },
+      contentMarkdown: {
+        selector: [
+          'div[class*="content"]',
+          'div[class*="markdown"]',
+          "div.prose",
+        ],
+        attr: "textContent",
+      },
+    },
+  },
+
+  messageInput: [
+    'div[contenteditable="true"]',
+    'textarea[placeholder*="Talk to Claude"]',
+    'div[role="textbox"]',
+  ],
+
+  submitButton: [
+    'button[aria-label*="Send"]',
+    'button[type="submit"]',
+    'button:has(svg[class*="send"])',
+  ],
+
+  generatingIndicator: [
+    'button[aria-label*="Stop"]',
+    'div[class*="generating"]',
+    'button:has-text("Stop")',
+  ],
+
+  streamingMessage: [
+    'div[data-testid="message"][data-role="assistant"]:last-of-type',
+    'div[class*="message-block"]:last-of-type',
+  ],
+
+  errorMessage: ['div[role="alert"]', 'div[class*="error"]'],
+};
+
 export class ClaudeAutomator implements AiAssistantAutomator {
-  readonly id = "claude" as const;
-  readonly urlGlobs = ["*://claude.ai/*"];
+  static readonly id = "claude" as const;
+  static readonly urlGlobs = ["*://claude.ai/*"] as const;
+  static readonly url = "https://claude.ai/new";
 
-  private readonly selectors = {
-    // Authentication
-    loginIndicator: [
-      'button[data-testid="user-menu-button"]',
-      'div[data-testid="user-avatar"]',
-      'button:has(img[alt*="profile"])',
-    ],
-
-    modelSelector: [
-      'button[aria-label*="model"]',
-      'div[class*="model-selector"]',
-    ],
-
-    modelName: ['button[aria-label*="model"] span', 'div[class*="model-name"]'],
-
-    // Chat List
-    chatListContainer: [
-      'div[data-testid="chat-list"]',
-      "aside nav",
-      'div[class*="sidebar"] div[class*="conversations"]',
-    ],
-
-    chatItems: [
-      'div[data-testid="chat-item"]',
-      "aside nav a",
-      'div[class*="conversation-item"]',
-    ],
-
-    chatItemData: {
-      fields: {
-        title: {
-          selector: ['div[class*="title"]', "span"],
-          attr: "textContent",
-        },
-        url: {
-          attr: "href",
-        },
-      },
-    },
-
-    newChatButton: [
-      'button[data-testid="new-chat-button"]',
-      'button:has-text("New Chat")',
-      'a[href*="/new"]',
-    ],
-
-    // Chat View
-    chatTitle: ["h1", 'div[class*="chat-title"]', "header h1"],
-
-    messageBlocks: [
-      'div[data-testid="message"]',
-      'div[class*="message-block"]',
-      "div[data-role]",
-    ],
-
-    messageData: {
-      fields: {
-        role: {
-          attr: "data-role",
-        },
-        content: {
-          selector: [
-            'div[class*="content"]',
-            'div[class*="markdown"]',
-            "div.prose",
-          ],
-          attr: "innerHTML",
-        },
-        contentMarkdown: {
-          selector: [
-            'div[class*="content"]',
-            'div[class*="markdown"]',
-            "div.prose",
-          ],
-          attr: "textContent",
-        },
-      },
-    },
-
-    messageInput: [
-      'div[contenteditable="true"]',
-      'textarea[placeholder*="Talk to Claude"]',
-      'div[role="textbox"]',
-    ],
-
-    submitButton: [
-      'button[aria-label*="Send"]',
-      'button[type="submit"]',
-      'button:has(svg[class*="send"])',
-    ],
-
-    generatingIndicator: [
-      'button[aria-label*="Stop"]',
-      'div[class*="generating"]',
-      'button:has-text("Stop")',
-    ],
-
-    streamingMessage: [
-      'div[data-testid="message"][data-role="assistant"]:last-of-type',
-      'div[class*="message-block"]:last-of-type',
-    ],
-
-    errorMessage: ['div[role="alert"]', 'div[class*="error"]'],
-  };
+  readonly id = ClaudeAutomator.id;
+  readonly urlGlobs = ClaudeAutomator.urlGlobs;
+  readonly url = ClaudeAutomator.url;
+  readonly selectors = selectors;
 
   private readonly config = {
     defaultTimeout: 30000,
@@ -255,8 +262,7 @@ export class ClaudeAutomator implements AiAssistantAutomator {
       try {
         const data = extractData(element, this.selectors.messageData);
         const messageId =
-          this.config?.generateMessageId?.(index, element) ||
-          `msg-${index}`;
+          this.config?.generateMessageId?.(index, element) || `msg-${index}`;
 
         messages.push({
           id: messageId,
@@ -287,12 +293,9 @@ export class ClaudeAutomator implements AiAssistantAutomator {
       await this.openChat(conversation);
     }
 
-    const inputElement = await waitForElement(
-      this.selectors.messageInput,
-      {
-        timeout: timeoutMs,
-      }
-    );
+    const inputElement = await waitForElement(this.selectors.messageInput, {
+      timeout: timeoutMs,
+    });
 
     // Claude uses contenteditable div
     if (inputElement instanceof HTMLElement && inputElement.isContentEditable) {

@@ -2,14 +2,31 @@
 // DOM selector utilities for Chrome extension content scripts
 // Replacement for Playwright Locator API
 
+import type { CssSelector, SelectorSpec } from "../services/automators/types";
+
+/**
+ * Resolve a selector value to a CSS selector string or array
+ * Extracts the selector from SelectorSpec objects or returns CssSelector as-is
+ */
+export function resolveCssSelector(
+  value: CssSelector | SelectorSpec | undefined
+): string | string[] {
+  if (!value) return [];
+  if (typeof value === "string" || Array.isArray(value)) {
+    return value;
+  }
+  // It's a SelectorSpec - extract the selector property
+  return value.selector || [];
+}
+
 /**
  * Try multiple selectors in order, return first matching element
  */
 export function querySelector(
-  selectors: string | string[],
+  selector: CssSelector | SelectorSpec,
   context: Document | Element = document
 ): Element | null {
-  const selectorArray = Array.isArray(selectors) ? selectors : [selectors];
+  const selectorArray = resolveCssSelector(selector);
 
   for (const selector of selectorArray) {
     const element = context.querySelector(selector);
@@ -23,10 +40,10 @@ export function querySelector(
  * Try multiple selectors, return all matching elements
  */
 export function querySelectorAll(
-  selectors: string | string[],
+  selector: CssSelector | SelectorSpec,
   context: Document | Element = document
 ): Element[] {
-  const selectorArray = Array.isArray(selectors) ? selectors : [selectors];
+  const selectorArray = resolveCssSelector(selector);
 
   for (const selector of selectorArray) {
     const elements = Array.from(context.querySelectorAll(selector));
@@ -40,27 +57,25 @@ export function querySelectorAll(
  * Wait for element to appear in DOM
  */
 export function waitForElement(
-  selectors: string | string[],
+  selector: CssSelector | SelectorSpec,
   options: {
     timeout?: number;
     context?: Document | Element;
-    state?: 'attached' | 'detached' | 'visible' | 'hidden';
+    state?: "attached" | "detached" | "visible" | "hidden";
   } = {}
 ): Promise<Element> {
-  const {
-    timeout = 30000,
-    context = document,
-    state = 'attached',
-  } = options;
+  const { timeout = 30000, context = document, state = "attached" } = options;
 
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       observer.disconnect();
-      reject(new Error(`Timeout waiting for element: ${JSON.stringify(selectors)}`));
+      reject(
+        new Error(`Timeout waiting for element: ${JSON.stringify(selector)}`)
+      );
     }, timeout);
 
     // Check if element already exists
-    const existing = querySelector(selectors, context);
+    const existing = querySelector(selector, context);
     if (existing && checkElementState(existing, state)) {
       clearTimeout(timeoutId);
       resolve(existing);
@@ -69,7 +84,7 @@ export function waitForElement(
 
     // Watch for element to appear
     const observer = new MutationObserver(() => {
-      const element = querySelector(selectors, context);
+      const element = querySelector(selector, context);
       if (element && checkElementState(element, state)) {
         clearTimeout(timeoutId);
         observer.disconnect();
@@ -80,7 +95,7 @@ export function waitForElement(
     observer.observe(context instanceof Document ? context.body : context, {
       childList: true,
       subtree: true,
-      attributes: state === 'visible' || state === 'hidden',
+      attributes: state === "visible" || state === "hidden",
     });
   });
 }
@@ -89,7 +104,7 @@ export function waitForElement(
  * Wait for element to disappear from DOM
  */
 export function waitForElementDetached(
-  selectors: string | string[],
+  selector: CssSelector | SelectorSpec,
   options: {
     timeout?: number;
     context?: Document | Element;
@@ -100,11 +115,15 @@ export function waitForElementDetached(
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       observer.disconnect();
-      reject(new Error(`Timeout waiting for element detachment: ${JSON.stringify(selectors)}`));
+      reject(
+        new Error(
+          `Timeout waiting for element detachment: ${JSON.stringify(selector)}`
+        )
+      );
     }, timeout);
 
     // Check if element already gone
-    const existing = querySelector(selectors, context);
+    const existing = querySelector(selector, context);
     if (!existing) {
       clearTimeout(timeoutId);
       resolve();
@@ -113,7 +132,7 @@ export function waitForElementDetached(
 
     // Watch for element to disappear
     const observer = new MutationObserver(() => {
-      const element = querySelector(selectors, context);
+      const element = querySelector(selector, context);
       if (!element) {
         clearTimeout(timeoutId);
         observer.disconnect();
@@ -131,15 +150,18 @@ export function waitForElementDetached(
 /**
  * Check element visibility/attachment state
  */
-function checkElementState(element: Element, state: 'attached' | 'detached' | 'visible' | 'hidden'): boolean {
+function checkElementState(
+  element: Element,
+  state: "attached" | "detached" | "visible" | "hidden"
+): boolean {
   switch (state) {
-    case 'attached':
+    case "attached":
       return document.contains(element);
-    case 'detached':
+    case "detached":
       return !document.contains(element);
-    case 'visible':
+    case "visible":
       return isVisible(element);
-    case 'hidden':
+    case "hidden":
       return !isVisible(element);
   }
 }
@@ -152,9 +174,9 @@ function isVisible(element: Element): boolean {
 
   const style = window.getComputedStyle(element);
   return (
-    style.display !== 'none' &&
-    style.visibility !== 'hidden' &&
-    style.opacity !== '0' &&
+    style.display !== "none" &&
+    style.visibility !== "hidden" &&
+    style.opacity !== "0" &&
     element.offsetParent !== null
   );
 }
@@ -166,7 +188,9 @@ export function click(element: Element): void {
   if (element instanceof HTMLElement) {
     element.click();
   } else {
-    element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    element.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true })
+    );
   }
 }
 
@@ -174,21 +198,26 @@ export function click(element: Element): void {
  * Fill input/textarea with text
  */
 export function fill(element: Element, text: string): void {
-  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+  if (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement
+  ) {
     // Set value
     const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-      element instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype,
-      'value'
+      element instanceof HTMLInputElement
+        ? HTMLInputElement.prototype
+        : HTMLTextAreaElement.prototype,
+      "value"
     )?.set;
 
     nativeInputValueSetter?.call(element, text);
 
     // Trigger events that frameworks expect
-    element.dispatchEvent(new Event('input', { bubbles: true }));
-    element.dispatchEvent(new Event('change', { bubbles: true }));
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+    element.dispatchEvent(new Event("change", { bubbles: true }));
   } else if (element instanceof HTMLElement && element.isContentEditable) {
     element.textContent = text;
-    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event("input", { bubbles: true }));
   }
 }
 
@@ -196,7 +225,7 @@ export function fill(element: Element, text: string): void {
  * Get text content from element
  */
 export function getText(element: Element): string {
-  return element.textContent?.trim() || '';
+  return element.textContent?.trim() || "";
 }
 
 /**
@@ -208,18 +237,22 @@ export function getAttribute(element: Element, attr: string): string | null {
 
 /**
  * Extract data from element using field spec
+ * @template T The expected return type shape
+ * @returns The extracted data matching type T, or null if element not found
  */
-export function extractData(
+export function extractData<T = unknown>(
   element: Element,
-  spec: {
-    selector?: string | string[];
-    attr?: string;
-    fields?: Record<string, any>;
+  spec: CssSelector | SelectorSpec
+): T | null {
+  // If spec is a plain CssSelector, find element and return text
+  if (typeof spec === "string" || Array.isArray(spec)) {
+    const targetElement = querySelector(spec, element);
+    return (targetElement ? getText(targetElement) : null) as T | null;
   }
-): any {
+
   // If selector provided, find nested element first
   const targetElement = spec.selector
-    ? querySelector(spec.selector, element)
+    ? querySelector(resolveCssSelector(spec.selector), element)
     : element;
 
   if (!targetElement) return null;
@@ -230,15 +263,15 @@ export function extractData(
     for (const [key, fieldSpec] of Object.entries(spec.fields)) {
       result[key] = extractData(targetElement, fieldSpec);
     }
-    return result;
+    return result as T;
   }
 
   // Extract attribute or text
   if (spec.attr) {
-    return getAttribute(targetElement, spec.attr);
+    return getAttribute(targetElement, spec.attr) as T | null;
   }
 
-  return getText(targetElement);
+  return getText(targetElement) as T;
 }
 
 /**
@@ -260,7 +293,7 @@ export function waitForCondition(
       }
 
       if (Date.now() - startTime > timeout) {
-        reject(new Error('Timeout waiting for condition'));
+        reject(new Error("Timeout waiting for condition"));
         return;
       }
 

@@ -24,115 +24,117 @@ import {
 } from "../../utils/selectors";
 import { watchStreamingResponse } from "./utils/stream-observer";
 
+export const selectors = {
+  // Authentication
+  loginIndicator: [
+    'button[aria-label*="Google Account"]',
+    'div[data-test-id="profile-button"]',
+    'img[alt*="Google Account"]',
+    'a[aria-label*="profile"]',
+  ],
+
+  modelSelector: ['button[aria-label*="model"]', 'div[class*="model-picker"]'],
+
+  modelName: ['button[aria-label*="model"] span', 'div[class*="model-name"]'],
+
+  // Chat List
+  chatListContainer: [
+    'nav[aria-label*="chat"]',
+    'div[class*="chat-list"]',
+    "aside nav",
+  ],
+
+  chatItems: [
+    "div[data-chat-id]",
+    'nav a[href*="/chat/"]',
+    'div[class*="chat-item"]',
+  ],
+
+  chatItemData: {
+    fields: {
+      title: {
+        selector: ["span", 'div[class*="title"]'],
+        attr: "textContent",
+      },
+      url: {
+        attr: "href",
+      },
+    },
+  },
+
+  newChatButton: [
+    'button[aria-label*="New chat"]',
+    'a[href="/"]',
+    'button:has-text("New chat")',
+  ],
+
+  // Chat View
+  chatTitle: ["h1", 'div[class*="chat-title"]'],
+
+  messageBlocks: ["message-content", 'div[class*="message"]', "div[data-role]"],
+
+  messageData: {
+    fields: {
+      role: {
+        attr: "data-role",
+      },
+      content: {
+        selector: [
+          'div[class*="markdown"]',
+          'div[class*="model-response"]',
+          "div.content",
+        ],
+        attr: "innerHTML",
+      },
+      contentMarkdown: {
+        selector: [
+          'div[class*="markdown"]',
+          'div[class*="model-response"]',
+          "div.content",
+        ],
+        attr: "textContent",
+      },
+    },
+  },
+
+  messageInput: [
+    'rich-textarea[placeholder*="Enter"]',
+    'div[contenteditable="true"]',
+    'textarea[placeholder*="Enter"]',
+  ],
+
+  submitButton: [
+    'button[aria-label*="Send"]',
+    'button[mattooltip*="Send"]',
+    'button:has(mat-icon:has-text("send"))',
+  ],
+
+  generatingIndicator: [
+    'button[aria-label*="Stop"]',
+    'div[class*="generating"]',
+    "mat-spinner",
+  ],
+
+  streamingMessage: [
+    "message-content:last-of-type",
+    'div[class*="message"]:last-of-type',
+  ],
+
+  errorMessage: ['div[role="alert"]', 'div[class*="error"]'],
+};
+
 export class GeminiAutomator implements AiAssistantAutomator {
-  readonly id = "gemini" as const;
-  readonly urlGlobs = ["*://gemini.google.com/*", "*://aistudio.google.com/*"];
+  static readonly id = "gemini";
+  static readonly urlGlobs = [
+    "*://gemini.google.com/*",
+    "*://aistudio.google.com/*",
+  ];
+  static readonly url = "https://gemini.google.com/app";
 
-  private readonly selectors = {
-    // Authentication
-    loginIndicator: [
-      'button[aria-label*="Google Account"]',
-      'div[data-test-id="profile-button"]',
-      'img[alt*="Google Account"]',
-      'a[aria-label*="profile"]',
-    ],
-
-    modelSelector: [
-      'button[aria-label*="model"]',
-      'div[class*="model-picker"]',
-    ],
-
-    modelName: ['button[aria-label*="model"] span', 'div[class*="model-name"]'],
-
-    // Chat List
-    chatListContainer: [
-      'nav[aria-label*="chat"]',
-      'div[class*="chat-list"]',
-      "aside nav",
-    ],
-
-    chatItems: [
-      "div[data-chat-id]",
-      'nav a[href*="/chat/"]',
-      'div[class*="chat-item"]',
-    ],
-
-    chatItemData: {
-      fields: {
-        title: {
-          selector: ["span", 'div[class*="title"]'],
-          attr: "textContent",
-        },
-        url: {
-          attr: "href",
-        },
-      },
-    },
-
-    newChatButton: [
-      'button[aria-label*="New chat"]',
-      'a[href="/"]',
-      'button:has-text("New chat")',
-    ],
-
-    // Chat View
-    chatTitle: ["h1", 'div[class*="chat-title"]'],
-
-    messageBlocks: [
-      "message-content",
-      'div[class*="message"]',
-      "div[data-role]",
-    ],
-
-    messageData: {
-      fields: {
-        role: {
-          attr: "data-role",
-        },
-        content: {
-          selector: [
-            'div[class*="markdown"]',
-            'div[class*="model-response"]',
-            "div.content",
-          ],
-          attr: "innerHTML",
-        },
-        contentMarkdown: {
-          selector: [
-            'div[class*="markdown"]',
-            'div[class*="model-response"]',
-            "div.content",
-          ],
-          attr: "textContent",
-        },
-      },
-    },
-
-    messageInput: [
-      'rich-textarea[placeholder*="Enter"]',
-      'div[contenteditable="true"]',
-      'textarea[placeholder*="Enter"]',
-    ],
-
-    submitButton: [
-      'button[aria-label*="Send"]',
-      'button[mattooltip*="Send"]',
-      'button:has(mat-icon:has-text("send"))',
-    ],
-
-    generatingIndicator: [
-      'button[aria-label*="Stop"]',
-      'div[class*="generating"]',
-      "mat-spinner",
-    ],
-
-    streamingMessage: [
-      "message-content:last-of-type",
-      'div[class*="message"]:last-of-type',
-    ],
-
-    errorMessage: ['div[role="alert"]', 'div[class*="error"]'],
-  };
+  readonly id = GeminiAutomator.id;
+  readonly urlGlobs = GeminiAutomator.urlGlobs;
+  readonly url = GeminiAutomator.url;
+  readonly selectors = selectors;
 
   private readonly config = {
     defaultTimeout: 30000,
@@ -377,7 +379,8 @@ export class GeminiAutomator implements AiAssistantAutomator {
 
     const normalized = role.toLowerCase();
     if (normalized === "user") return "user";
-    if (normalized === "assistant" || normalized === "model") return "assistant";
+    if (normalized === "assistant" || normalized === "model")
+      return "assistant";
     if (normalized === "system") return "system";
     if (normalized === "tool") return "tool";
 

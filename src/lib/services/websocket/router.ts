@@ -1,32 +1,20 @@
 // lib/services/websocket/router.ts
 
-import { browser } from 'wxt/browser';
-import type { AiAssistantId, PromptSubmission, ChatTarget } from '../../types/automators';
-import type { ServerMessage, ExtensionMessage } from '../../types/websocket';
-import type { BackgroundToContentCommand } from '../../types/runtime';
-import type { WebsocketClient } from './client';
-
-const assistantTargets: Record<
+import { browser } from "wxt/browser";
+import type {
   AiAssistantId,
-  { readonly urlPatterns: readonly string[]; readonly homeUrl: string }
-> = {
-  chatgpt: {
-    urlPatterns: ['*://chat.openai.com/*', '*://chatgpt.com/*'],
-    homeUrl: 'https://chatgpt.com/',
-  },
-  claude: {
-    urlPatterns: ['*://claude.ai/*'],
-    homeUrl: 'https://claude.ai/new',
-  },
-  gemini: {
-    urlPatterns: ['*://gemini.google.com/*'],
-    homeUrl: 'https://gemini.google.com/app',
-  },
-  grok: {
-    urlPatterns: ['*://grok.com/*', '*://x.com/*'],
-    homeUrl: 'https://grok.com/',
-  },
-};
+  PromptSubmission,
+  ChatTarget,
+} from "../../types/automators";
+import type { ServerMessage, ExtensionMessage } from "../../types/websocket";
+import type { BackgroundToContentCommand } from "../../types/runtime";
+import type { WebsocketClient } from "./client";
+import {
+  ChatGPTAutomator,
+  ClaudeAutomator,
+  GeminiAutomator,
+  GrokAutomator,
+} from "../automators/registry";
 
 type AssistantTab = {
   readonly assistant: AiAssistantId;
@@ -40,7 +28,7 @@ type PendingPrompt = {
 };
 
 export class WebsocketRouter {
-  private desiredAssistant: AiAssistantId = 'chatgpt';
+  private desiredAssistant: AiAssistantId = "chatgpt";
   private lastKnownAssistantTab: AssistantTab | null = null;
   private readonly pendingPrompts = new Map<string, PendingPrompt>();
 
@@ -48,50 +36,56 @@ export class WebsocketRouter {
 
   handleMessage = (message: ServerMessage): void => {
     switch (message.type) {
-      case 'connection:hello':
+      case "connection:hello":
         this.desiredAssistant = message.assistant;
         if (message.port) {
           this.client.updatePort(message.port);
         }
         this.send({
-          type: 'connection:status',
+          type: "connection:status",
           payload: {
-            status: 'open',
+            status: "open",
             message: `Ready for assistant ${this.desiredAssistant}`,
           },
         });
         break;
-      case 'connection:close':
+      case "connection:close":
         this.client.disconnect();
         break;
-      case 'chat:request-list':
+      case "chat:request-list":
         this.dispatchToContent(message.assistant, {
-          type: 'assistant:extract-chat-list',
+          type: "assistant:extract-chat-list",
           assistantId: message.assistant,
         });
         break;
-      case 'chat:request-details':
+      case "chat:request-details":
         this.dispatchToContent(message.assistant, {
-          type: 'assistant:extract-chat',
+          type: "assistant:extract-chat",
           assistantId: message.assistant,
           payload: message.target,
         });
         break;
-      case 'chat:submit-prompt':
+      case "chat:submit-prompt":
         this.handleSubmitPrompt(message.assistant, message.request);
         break;
     }
   };
 
-  private async handleSubmitPrompt(assistant: AiAssistantId, request: PromptSubmission) {
-    const tabId = await this.ensureAssistantTab(assistant, request.conversation?.url);
+  private async handleSubmitPrompt(
+    assistant: AiAssistantId,
+    request: PromptSubmission
+  ) {
+    const tabId = await this.ensureAssistantTab(
+      assistant,
+      request.conversation?.url
+    );
     if (tabId === null) {
       this.send({
-        type: 'chat:error',
+        type: "chat:error",
         assistantId: assistant,
         payload: {
-          code: 'navigation-failed',
-          message: 'Unable to locate or create assistant tab',
+          code: "navigation-failed",
+          message: "Unable to locate or create assistant tab",
           details: { assistant },
         },
       });
@@ -105,7 +99,7 @@ export class WebsocketRouter {
     });
 
     await this.dispatchToContent(assistant, {
-      type: 'assistant:process-prompt',
+      type: "assistant:process-prompt",
       assistantId: assistant,
       payload: request,
     });
@@ -116,10 +110,12 @@ export class WebsocketRouter {
     preferredUrl?: string
   ): Promise<number | null> {
     if (this.lastKnownAssistantTab?.assistant === assistant) {
-      const tabExists = await browser.tabs.get(this.lastKnownAssistantTab.tabId).then(
-        () => true,
-        () => false
-      );
+      const tabExists = await browser.tabs
+        .get(this.lastKnownAssistantTab.tabId)
+        .then(
+          () => true,
+          () => false
+        );
       if (tabExists) {
         if (preferredUrl) {
           await browser.tabs.update(this.lastKnownAssistantTab.tabId, {
@@ -132,17 +128,21 @@ export class WebsocketRouter {
       this.lastKnownAssistantTab = null;
     }
 
-    const target = assistantTargets[assistant];
-    if (!target) {
+    // Get automator configuration
+    const AutomatorClass = this.getAutomatorClass(assistant);
+    if (!AutomatorClass) {
       return null;
     }
 
-    const matchingTabs = await browser.tabs.query({ url: target.urlPatterns as string[] });
+    const matchingTabs = await browser.tabs.query({
+      url: AutomatorClass.urlGlobs as unknown as string[],
+    });
 
-    const tab = matchingTabs.find((candidate) => {
-      if (!preferredUrl || !candidate.url) return true;
-      return candidate.url === preferredUrl;
-    }) ?? matchingTabs[0];
+    const tab =
+      matchingTabs.find((candidate) => {
+        if (!preferredUrl || !candidate.url) return true;
+        return candidate.url === preferredUrl;
+      }) ?? matchingTabs[0];
 
     if (tab?.id) {
       if (preferredUrl && tab.url !== preferredUrl) {
@@ -152,7 +152,10 @@ export class WebsocketRouter {
       return tab.id;
     }
 
-    const created = await browser.tabs.create({ url: preferredUrl ?? target.homeUrl, active: false });
+    const created = await browser.tabs.create({
+      url: preferredUrl ?? AutomatorClass.url,
+      active: false,
+    });
     if (!created.id) {
       return null;
     }
@@ -160,15 +163,18 @@ export class WebsocketRouter {
     return created.id;
   }
 
-  private async dispatchToContent(assistant: AiAssistantId, command: BackgroundToContentCommand) {
+  private async dispatchToContent(
+    assistant: AiAssistantId,
+    command: BackgroundToContentCommand
+  ) {
     const tabId = await this.ensureAssistantTab(assistant);
     if (tabId === null) {
       this.send({
-        type: 'chat:error',
+        type: "chat:error",
         assistantId: assistant,
         payload: {
-          code: 'navigation-failed',
-          message: 'Unable to resolve assistant tab',
+          code: "navigation-failed",
+          message: "Unable to resolve assistant tab",
         },
       });
       return;
@@ -177,13 +183,13 @@ export class WebsocketRouter {
     try {
       await browser.tabs.sendMessage(tabId, command);
     } catch (error) {
-      console.error('Failed to dispatch message to content script', error);
+      console.error("Failed to dispatch message to content script", error);
       this.send({
-        type: 'chat:error',
+        type: "chat:error",
         assistantId: assistant,
         payload: {
-          code: 'prompt-failed',
-          message: 'Content script communication failed',
+          code: "prompt-failed",
+          message: "Content script communication failed",
           details: { error: `${error}` },
         },
       });
@@ -192,5 +198,20 @@ export class WebsocketRouter {
 
   private send(message: ExtensionMessage): void {
     this.client.send(message);
+  }
+
+  private getAutomatorClass(assistant: AiAssistantId) {
+    switch (assistant) {
+      case "chatgpt":
+        return ChatGPTAutomator;
+      case "claude":
+        return ClaudeAutomator;
+      case "gemini":
+        return GeminiAutomator;
+      case "grok":
+        return GrokAutomator;
+      default:
+        return null;
+    }
   }
 }

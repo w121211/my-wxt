@@ -24,104 +24,117 @@ import {
   getText,
   extractData,
   waitForCondition,
+  resolveCssSelector,
 } from "../../utils/selectors";
 import { watchStreamingResponse } from "./utils/stream-observer";
 
+interface ChatItemData {
+  title: string | null;
+  url: string | null;
+  chatId: string | null;
+}
+
+const selectors = {
+  // Authentication
+  loginIndicator: [
+    'div[data-testid="SideNav_AccountSwitcher_Button"]',
+    'a[aria-label*="Profile"]',
+    'div[data-testid="primaryColumn"]',
+  ],
+
+  modelSelector: [
+    'button[aria-label*="model"]',
+    'div[class*="model-selector"]',
+  ],
+
+  modelName: ['button[aria-label*="model"] span', 'div[class*="model-name"]'],
+
+  // Chat List
+  chatListContainer: ['nav[aria-label*="chat"]', 'div[class*="chat-list"]'],
+
+  chatItems: ["div[data-chat-id]", 'a[href*="/grok/"]'],
+
+  chatItemData: {
+    fields: {
+      title: {
+        selector: ["span", 'div[class*="title"]'],
+        attr: "textContent",
+      },
+      url: {
+        attr: "href",
+      },
+      chatId: {
+        attr: "data-chat-id",
+      },
+    },
+  },
+
+  newChatButton: ['button[aria-label*="New"]', 'a[href="/i/grok"]'],
+
+  // Chat View - Grok has nested message structure!
+  chatTitle: ["h1", 'div[aria-label="Grok"]'],
+
+  messageBlocks: [
+    'div[data-testid="grok-message-block"]',
+    'div[class*="message-block"]',
+    'article[data-testid*="message"]',
+  ],
+
+  // Grok-specific: nested message extraction
+  messageData: {
+    fields: {
+      userMessage: {
+        selector: ['div[data-testid="user-message"]', 'div[class*="user"]'],
+        attr: "textContent",
+      },
+      aiMessage: {
+        selector: ['div[data-testid="ai-message"]', 'div[class*="assistant"]'],
+        attr: "textContent",
+      },
+      assistantMessage: {
+        selector: [
+          'div[data-testid="assistant-message"]',
+          'div[class*="response"]',
+        ],
+        attr: "textContent",
+      },
+    },
+  },
+
+  messageInput: [
+    'div[contenteditable="true"]',
+    'textarea[placeholder*="Ask Grok"]',
+    'div[data-testid="grok-input"]',
+  ],
+
+  submitButton: [
+    'button[aria-label*="Send"]',
+    'button[data-testid="grok-send-button"]',
+    'button[type="submit"]',
+  ],
+
+  generatingIndicator: [
+    'button[aria-label*="Stop"]',
+    'div[class*="generating"]',
+  ],
+
+  streamingMessage: [
+    'div[data-testid="grok-message-block"]:last-of-type',
+    'div[class*="message-block"]:last-of-type',
+  ],
+
+  errorMessage: ['div[role="alert"]', 'div[class*="error"]'],
+};
+
 export class GrokAutomator implements AiAssistantAutomator {
-  readonly id = "grok" as const;
-  readonly urlGlobs = ["*://*.x.com/i/grok", "*://twitter.com/i/grok"];
+  static readonly id = "grok" as const;
+  static readonly url = "https://grok.com/";
+  static readonly urlGlobs = ["*://grok.com/*"];
 
-  private readonly selectors = {
-    // Authentication
-    loginIndicator: [
-      'div[data-testid="SideNav_AccountSwitcher_Button"]',
-      'a[aria-label*="Profile"]',
-      'div[data-testid="primaryColumn"]',
-    ],
-
-    modelSelector: [
-      'button[aria-label*="model"]',
-      'div[class*="model-selector"]',
-    ],
-
-    modelName: ['button[aria-label*="model"] span', 'div[class*="model-name"]'],
-
-    // Chat List
-    chatListContainer: ['nav[aria-label*="chat"]', 'div[class*="chat-list"]'],
-
-    chatItems: ["div[data-chat-id]", 'a[href*="/grok/"]'],
-
-    chatItemData: {
-      fields: {
-        title: {
-          selector: ["span", 'div[class*="title"]'],
-          attr: "textContent",
-        },
-        url: {
-          attr: "href",
-        },
-      },
-    },
-
-    newChatButton: ['button[aria-label*="New"]', 'a[href="/i/grok"]'],
-
-    // Chat View - Grok has nested message structure!
-    chatTitle: ["h1", 'div[aria-label="Grok"]'],
-
-    messageBlocks: [
-      'div[data-testid="grok-message-block"]',
-      'div[class*="message-block"]',
-      'article[data-testid*="message"]',
-    ],
-
-    // Grok-specific: nested message extraction
-    messageData: {
-      fields: {
-        userMessage: {
-          selector: ['div[data-testid="user-message"]', 'div[class*="user"]'],
-          attr: "textContent",
-        },
-        aiMessage: {
-          selector: [
-            'div[data-testid="ai-message"]',
-            'div[class*="assistant"]',
-          ],
-          attr: "textContent",
-        },
-        assistantMessage: {
-          selector: [
-            'div[data-testid="assistant-message"]',
-            'div[class*="response"]',
-          ],
-          attr: "textContent",
-        },
-      },
-    },
-
-    messageInput: [
-      'div[contenteditable="true"]',
-      'textarea[placeholder*="Ask Grok"]',
-      'div[data-testid="grok-input"]',
-    ],
-
-    submitButton: [
-      'button[aria-label*="Send"]',
-      'button[data-testid="grok-send-button"]',
-      'button[type="submit"]',
-    ],
-
-    generatingIndicator: [
-      'button[aria-label*="Stop"]',
-      'div[class*="generating"]',
-    ],
-
-    streamingMessage: [
-      'div[data-testid="grok-message-block"]:last-of-type',
-      'div[class*="message-block"]:last-of-type',
-    ],
-
-    errorMessage: ['div[role="alert"]', 'div[class*="error"]'],
-  };
+  readonly id = GrokAutomator.id;
+  readonly url = GrokAutomator.url;
+  readonly urlGlobs = GrokAutomator.urlGlobs;
+  readonly selectors = selectors;
 
   private readonly config = {
     defaultTimeout: 30000,
@@ -138,7 +151,7 @@ export class GrokAutomator implements AiAssistantAutomator {
     const { timeoutMs = 300000 } = options;
 
     try {
-      await waitForElement(this.selectors.loginIndicator, {
+      await waitForElement(resolveCssSelector(this.selectors.loginIndicator), {
         timeout: timeoutMs,
       });
 
@@ -162,21 +175,24 @@ export class GrokAutomator implements AiAssistantAutomator {
   }
 
   async extractChatEntries(): Promise<readonly ChatEntry[]> {
-    const chatItems = querySelectorAll(this.selectors.chatItems || []);
+    const chatItems = querySelectorAll(
+      resolveCssSelector(this.selectors.chatItems)
+    );
     const entries: ChatEntry[] = [];
 
     for (const [index, item] of chatItems.entries()) {
       try {
-        const data = extractData(item, this.selectors.chatItemData || {});
-        const url = item.getAttribute("href");
-        const id =
-          this.extractChatIdFromUrl(url) || item.getAttribute("data-chat-id");
+        const data = extractData<ChatItemData>(
+          item,
+          this.selectors.chatItemData
+        );
+        const id = this.extractChatIdFromUrl(data?.url ?? null) || data?.chatId;
 
         entries.push({
           id: id || `chat-${index}`,
           title: data?.title || getText(item) || "Untitled Chat",
-          url: url
-            ? new URL(url, window.location.origin).href
+          url: data?.url
+            ? new URL(data.url, window.location.origin).href
             : window.location.href,
           updatedAt: new Date().toISOString(),
         });
@@ -191,25 +207,32 @@ export class GrokAutomator implements AiAssistantAutomator {
   async openChat(target: ChatTarget): Promise<void> {
     if (target.url) {
       window.location.href = target.url;
-      await waitForElement(this.selectors.messageBlocks, {
+      await waitForElement(resolveCssSelector(this.selectors.messageBlocks), {
         timeout: 10000,
       });
       return;
     }
 
     if (target.id) {
-      const chatItems = querySelectorAll(this.selectors.chatItems || []);
+      const chatItems = querySelectorAll(
+        resolveCssSelector(this.selectors.chatItems)
+      );
 
       for (const item of chatItems) {
-        const url = item.getAttribute("href");
-        const id =
-          this.extractChatIdFromUrl(url) || item.getAttribute("data-chat-id");
+        const data = extractData<ChatItemData>(
+          item,
+          this.selectors.chatItemData
+        );
+        const id = this.extractChatIdFromUrl(data?.url ?? null) || data?.chatId;
 
         if (id === target.id) {
           click(item);
-          await waitForElement(this.selectors.messageBlocks, {
-            timeout: 10000,
-          });
+          await waitForElement(
+            resolveCssSelector(this.selectors.messageBlocks),
+            {
+              timeout: 10000,
+            }
+          );
           return;
         }
       }
@@ -220,11 +243,13 @@ export class GrokAutomator implements AiAssistantAutomator {
       );
     }
 
-    const newChatBtn = querySelector(this.selectors.newChatButton || []);
+    const newChatBtn = querySelector(
+      resolveCssSelector(this.selectors.newChatButton)
+    );
     if (newChatBtn) {
       click(newChatBtn);
       await waitForCondition(
-        () => !querySelector(this.selectors.messageBlocks),
+        () => !querySelector(resolveCssSelector(this.selectors.messageBlocks)),
         {
           timeout: 5000,
         }
@@ -238,13 +263,16 @@ export class GrokAutomator implements AiAssistantAutomator {
    */
   async extractChatPage(target: ChatTarget): Promise<ChatPage> {
     const chatTitle = getText(
-      querySelector(this.selectors.chatTitle || []) || document.body
+      querySelector(resolveCssSelector(this.selectors.chatTitle)) ||
+        document.body
     );
     const id =
       target.id || this.extractChatIdFromUrl(window.location.href) || "current";
     const url = window.location.href;
 
-    const messageBlocks = querySelectorAll(this.selectors.messageBlocks);
+    const messageBlocks = querySelectorAll(
+      resolveCssSelector(this.selectors.messageBlocks)
+    );
     const messages: ChatMessage[] = [];
     let messageIndex = 0;
 
@@ -287,7 +315,7 @@ export class GrokAutomator implements AiAssistantAutomator {
     }
 
     const inputElement = await waitForElement(
-      this.selectors.messageInput,
+      resolveCssSelector(this.selectors.messageInput),
       {
         timeout: timeoutMs,
       }
@@ -303,7 +331,9 @@ export class GrokAutomator implements AiAssistantAutomator {
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    const submitButton = querySelector(this.selectors.submitButton);
+    const submitButton = querySelector(
+      resolveCssSelector(this.selectors.submitButton)
+    );
     if (!submitButton) {
       throw this.createError(
         "prompt-failed",
@@ -315,10 +345,13 @@ export class GrokAutomator implements AiAssistantAutomator {
     click(submitButton);
 
     try {
-      await waitForElement(this.selectors.generatingIndicator || [], {
-        timeout: 5000,
-        state: "attached",
-      });
+      await waitForElement(
+        resolveCssSelector(this.selectors.generatingIndicator),
+        {
+          timeout: 5000,
+          state: "attached",
+        }
+      );
     } catch {
       // Indicator might not appear if response is very fast
     }
@@ -420,7 +453,9 @@ export class GrokAutomator implements AiAssistantAutomator {
 
   private async extractDefaultModel(): Promise<string | undefined> {
     try {
-      const modelElement = querySelector(this.selectors.modelName || []);
+      const modelElement = querySelector(
+        resolveCssSelector(this.selectors.modelName)
+      );
       if (modelElement) {
         return getText(modelElement) || undefined;
       }
