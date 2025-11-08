@@ -26,4 +26,4 @@ web-ext.config.ts
 *.sw?
 
 # This app
-tests/snapshots
+tests/*snapshots*

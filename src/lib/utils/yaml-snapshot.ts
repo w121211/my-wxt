@@ -7,6 +7,20 @@
 // --- Public Types ---
 
 /**
+ * Metadata about the page snapshot.
+ */
+export type SnapshotMetadata = {
+  url: string;
+  title: string;
+  viewport: {
+    width: number;
+    height: number;
+  };
+  timestamp: string;
+  userAgent: string;
+};
+
+/**
  * The generated YAML node, representing a simplified element in the tree.
  */
 type YamlNode = {
@@ -23,11 +37,20 @@ type YamlNode = {
 /**
  * Generates and renders a complete DOM snapshot for a given DOM element.
  * @param rootElement The root DOM element to start the snapshot from (e.g., document.body).
+ * @param includeMetadata Whether to include page metadata at the top of the output (default: true).
  * @returns A YAML-like string representation of the simplified DOM tree.
  */
-export function snapshotYaml(rootElement: HTMLElement): string {
+export function snapshotYaml(rootElement: HTMLElement, includeMetadata: boolean = true): string {
   const snapshot = generateYamlTree(rootElement);
-  return renderYamlTree(snapshot);
+  let output = "";
+
+  if (includeMetadata) {
+    const metadata = generateMetadata();
+    output += renderMetadata(metadata) + "\n\n";
+  }
+
+  output += renderYamlTree(snapshot);
+  return output;
 }
 
 /**
@@ -57,9 +80,6 @@ export function renderYamlTree(rootNode: YamlNode | null): string {
 
 // NOISY_CLASSES_REGEX and getFilteredClasses are removed as all classes are being omitted.
 const IMPORTANT_ATTRIBUTES = [
-  "data-testid",
-  "data-cy",
-  "data-qa",
   "name",
   "placeholder",
   "alt",
@@ -68,8 +88,38 @@ const IMPORTANT_ATTRIBUTES = [
   "for",
   "type",
   "value",
-  "role", // Keep ARIA role
+  "role",
+  "data-*", // All data attributes
+  "aria-*", // All ARIA attributes
 ];
+
+/**
+ * Generates metadata about the current page.
+ */
+export function generateMetadata(): SnapshotMetadata {
+  return {
+    url: window.location.href,
+    title: document.title,
+    viewport: {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    },
+    timestamp: new Date().toISOString(),
+    userAgent: navigator.userAgent,
+  };
+}
+
+/**
+ * Renders metadata as a YAML-like comment block.
+ */
+export function renderMetadata(metadata: SnapshotMetadata): string {
+  return `# Snapshot Metadata
+# URL: ${metadata.url}
+# Title: ${metadata.title}
+# Viewport: ${metadata.viewport.width}x${metadata.viewport.height}
+# Timestamp: ${metadata.timestamp}
+# User Agent: ${metadata.userAgent}`;
+}
 
 /**
  * Recursively builds the simplified DOM tree.
@@ -169,20 +219,37 @@ function renderNodeRecursive(node: YamlNode, lines: string[], indent: number) {
 
 function getImportantAttributes(element: Element): Record<string, string | boolean> {
   const attrs: Record<string, string | boolean> = {};
-  for (const attr of IMPORTANT_ATTRIBUTES) {
-    if (element.hasAttribute(attr)) {
-      attrs[attr] = element.getAttribute(attr) || "";
+
+  // Get all attribute names from the element
+  const elementAttrs = element.getAttributeNames();
+
+  // Check each attribute against IMPORTANT_ATTRIBUTES patterns
+  for (const elementAttr of elementAttrs) {
+    for (const pattern of IMPORTANT_ATTRIBUTES) {
+      if (matchesAttributePattern(elementAttr, pattern)) {
+        attrs[elementAttr] = element.getAttribute(elementAttr) || "";
+        break; // Don't check other patterns once matched
+      }
     }
   }
+
   // Add state attributes
   if ((element as HTMLInputElement).disabled) attrs["disabled"] = true;
   if ((element as HTMLInputElement).checked) attrs["checked"] = true;
   if ((element as HTMLSelectElement).multiple) attrs["multiple"] = true;
-  if (element.hasAttribute("aria-expanded")) {
-    attrs["aria-expanded"] = element.getAttribute("aria-expanded")!;
-  }
 
   return attrs;
+}
+
+/**
+ * Checks if an attribute name matches a pattern (supports wildcards like "data-*").
+ */
+function matchesAttributePattern(attrName: string, pattern: string): boolean {
+  if (pattern.endsWith("-*")) {
+    const prefix = pattern.slice(0, -1); // Remove the "*"
+    return attrName.startsWith(prefix);
+  }
+  return attrName === pattern;
 }
 
 function getDirectText(element: Element): string {

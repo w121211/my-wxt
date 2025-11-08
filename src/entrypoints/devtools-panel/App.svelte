@@ -85,8 +85,8 @@
       target: { tabId },
       func: () => ({
         hasAutomator: "__automator__" in window,
-        hasAriaSnapshotter: "__snapshotAria__" in window,
-        hasYamlSnapshotter: "__snapshotYaml__" in window,
+        hasSnapshotAria: "__snapshotAria__" in window,
+        hasYamlSnapshot: "__snapshotYaml__" in window,
       }),
     });
     console.log("[my-wxt-panel] content script check:", checkResult[0]?.result);
@@ -324,17 +324,28 @@
         ariaResult[0]?.result || "# Error getting ARIA snapshot";
 
       // Get YAML snapshot
-      const yamlSnapshotResult = await browser.scripting.executeScript({
-        target: { tabId },
-        func: () => {
-          if (window.__snapshotYaml__) {
-            return window.__snapshotYaml__(document.body);
-          }
-          return "# YAML snapshot not available";
-        },
-      });
-      const yamlSnapshot =
-        yamlSnapshotResult[0]?.result || "# Error getting YAML snapshot";
+      let yamlSnapshot = "# Error getting YAML snapshot";
+      try {
+        const yamlSnapshotResult = await browser.scripting.executeScript({
+          target: { tabId },
+          func: () => {
+            try {
+              if (window.__snapshotYaml__) {
+                return window.__snapshotYaml__(document.body);
+              }
+              return "# YAML snapshot not available";
+            } catch (error) {
+              return `# Error in __snapshotYaml__: ${error.message}`;
+            }
+          },
+        });
+        console.log("YAML snapshot result:", yamlSnapshotResult);
+        yamlSnapshot =
+          yamlSnapshotResult[0]?.result || "# Error getting YAML snapshot";
+      } catch (error) {
+        console.error("Failed to execute YAML snapshot script:", error);
+        yamlSnapshot = `# Script execution failed: ${error.message}`;
+      }
 
       // Get page screenshot (as PNG)
       let screenshotBlob: Blob | null = null;
