@@ -1,8 +1,7 @@
-// entrypoints/content.ts
-
 import { browser } from "wxt/browser";
 import { getAutomatorByUrl } from "../lib/services/automators/registry";
 import { snapshotAria } from "../lib/utils/aria-snapshot";
+import { snapshotYaml } from "@/lib/utils/yaml-snapshot";
 import type {
   AiAssistantAutomator,
   AiAssistantId,
@@ -11,8 +10,14 @@ import type {
   BackgroundToContentCommand,
   ContentToBackgroundNotification,
 } from "../lib/types/runtime";
-import { snapshotHtml } from "@/lib/utils/html-snapshot";
-import { snapshotYaml } from "@/lib/utils/yaml-snapshot";
+
+declare global {
+  interface Window {
+    __automator__?: AiAssistantAutomator;
+    __snapshotAria__?: (element: Element) => string;
+    __snapshotYaml__?: (element: Element) => string;
+  }
+}
 
 export default defineContentScript({
   matches: [
@@ -36,9 +41,9 @@ export default defineContentScript({
     // Expose automator to window for DevTools inspector
     (window as any).__automator__ = automator;
     (window as any).__snapshotAria__ = snapshotAria;
-    (window as any).__snapshotHtml__ = snapshotYaml;
+    (window as any).__snapshotYaml__ = snapshotYaml;
     console.log(
-      "[my-wxt] __automator__, __snapshotAria__, __snapshotHtml__ exposed to window"
+      "[my-wxt] __automator__, __snapshotAria__, __snapshotYaml__ exposed to window"
     );
 
     // Listen for commands from the background script
@@ -82,7 +87,7 @@ const notifyAutomatorError = (
   assistantId: AiAssistantId,
   error: unknown,
   context: string,
-  promptId?: string
+  messageId?: string
 ) => {
   return sendNotification({
     type: "chat:error",
@@ -90,7 +95,7 @@ const notifyAutomatorError = (
     payload: {
       code: "unexpected",
       message: `${context} failed: ${error}`,
-      details: { context, promptId },
+      details: { context, messageId },
     },
   });
 };
@@ -170,7 +175,7 @@ const handleProcessPrompt = async (
       assistantId,
       error,
       "sendPrompt",
-      request.promptId
+      request.messageId
     );
   }
 };

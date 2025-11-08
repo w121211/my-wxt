@@ -1,10 +1,11 @@
-import { defineConfig } from 'wxt';
+import { defineConfig } from "wxt";
 
 // See https://wxt.dev/api/config.html
 export default defineConfig({
-  srcDir: 'src',
-  modules: ['@wxt-dev/module-svelte'],
+  srcDir: "src",
+  modules: ["@wxt-dev/module-svelte"],
   manifest: {
-    permissions: ['scripting', 'activeTab', 'tabs'],
+    permissions: ["scripting", "activeTab", "tabs"],
+    host_permissions: ["<all_urls>"],
   },
 });

@@ -159,6 +159,26 @@ describe("detectAssistantIdFromUrl", () => {
       expect(detectAssistantIdFromUrl("https://grok.com/c/abc123")).toBe(
         "grok"
       );
+      expect(detectAssistantIdFromUrl("https://grok.com/i/grok/abc123")).toBe(
+        "grok"
+      );
+    });
+
+    it("should detect grok from x.ai domains", () => {
+      expect(detectAssistantIdFromUrl("https://x.ai/")).toBe("grok");
+      expect(detectAssistantIdFromUrl("https://accounts.x.ai/sign-in")).toBe(
+        "grok"
+      );
+      expect(detectAssistantIdFromUrl("https://accounts.x.ai/signup")).toBe(
+        "grok"
+      );
+      expect(detectAssistantIdFromUrl("https://api.x.ai/")).toBe("grok");
+    });
+
+    it("should detect grok from subdomains", () => {
+      expect(detectAssistantIdFromUrl("https://app.grok.com/")).toBe("grok");
+      expect(detectAssistantIdFromUrl("https://chat.grok.com/")).toBe("grok");
+      expect(detectAssistantIdFromUrl("https://www.grok.com/")).toBe("grok");
     });
   });
 

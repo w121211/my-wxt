@@ -356,7 +356,7 @@ export class ChatgptAutomator implements AiAssistantAutomator {
       throw this.createError(
         "prompt-failed",
         "Submit button not found",
-        request.promptId
+        request.messageId
       );
     }
 
@@ -380,7 +380,7 @@ export class ChatgptAutomator implements AiAssistantAutomator {
     request: PromptSubmission,
     handleDelta: (delta: ChatDelta) => void
   ): Promise<ChatResponse> {
-    const { promptId, timeoutMs = 120000 } = request;
+    const { messageId, timeoutMs = 120000 } = request;
 
     const startTime = Date.now();
     let lastContent = "";
@@ -389,7 +389,7 @@ export class ChatgptAutomator implements AiAssistantAutomator {
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         observer.disconnect();
-        reject(this.createError("timeout", "Response timeout", promptId));
+        reject(this.createError("timeout", "Response timeout", messageId));
       }, timeoutMs);
 
       // Watch for changes to the streaming message
@@ -413,7 +413,7 @@ export class ChatgptAutomator implements AiAssistantAutomator {
             lastContent = currentMarkdown;
 
             handleDelta({
-              promptId,
+              messageId,
               html: currentContent,
               markdown: currentMarkdown,
               timestamp: new Date().toISOString(),
@@ -431,7 +431,7 @@ export class ChatgptAutomator implements AiAssistantAutomator {
             observer.disconnect();
 
             resolve({
-              promptId,
+              messageId,
               html: currentContent,
               markdown: currentMarkdown,
               finishedAt: new Date().toISOString(),
@@ -444,7 +444,7 @@ export class ChatgptAutomator implements AiAssistantAutomator {
             this.createError(
               "unexpected",
               error instanceof Error ? error.message : "Unknown error",
-              promptId
+              messageId
             )
           );
         }
@@ -514,13 +514,13 @@ export class ChatgptAutomator implements AiAssistantAutomator {
   private createError(
     code: ChatError["code"],
     message: string,
-    promptId?: string,
+    messageId?: string,
     details?: Record<string, unknown>
   ): ChatError {
     return {
       code,
       message,
-      promptId,
+      messageId,
       details,
     };
   }

@@ -6,7 +6,7 @@ import { querySelector, extractData } from '../../../utils/selectors';
 import type { SelectorSpec, FieldSpec } from '../../../types/automators';
 
 export interface StreamObserverOptions {
-  promptId: string;
+  messageId: string;
   timeoutMs?: number;
   streamingMessageSelector: SelectorSpec;
   messageDataSpec: FieldSpec;
@@ -32,7 +32,7 @@ export class StreamObserver {
    */
   start(): void {
     const {
-      promptId,
+      messageId,
       timeoutMs = 120000,
       streamingMessageSelector,
       messageDataSpec,
@@ -48,7 +48,7 @@ export class StreamObserver {
       onError({
         code: 'timeout',
         message: 'Response timeout',
-        promptId,
+        messageId,
       });
     }, timeoutMs);
 
@@ -61,7 +61,7 @@ export class StreamObserver {
         onError({
           code: 'unexpected',
           message: error instanceof Error ? error.message : 'Unknown error',
-          promptId,
+          messageId,
         });
       }
     });
@@ -97,7 +97,7 @@ export class StreamObserver {
    */
   private checkForUpdates(): void {
     const {
-      promptId,
+      messageId,
       streamingMessageSelector,
       messageDataSpec,
       generatingIndicatorSelector,
@@ -119,7 +119,7 @@ export class StreamObserver {
       this.lastContent = currentMarkdown;
 
       onDelta({
-        promptId,
+        messageId,
         html: currentContent,
         markdown: currentMarkdown,
         timestamp: new Date().toISOString(),
@@ -133,7 +133,7 @@ export class StreamObserver {
       if (!generatingIndicator && currentMarkdown) {
         this.stop();
         onComplete({
-          promptId,
+          messageId,
           html: currentContent,
           markdown: currentMarkdown,
           finishedAt: new Date().toISOString(),

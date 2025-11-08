@@ -308,7 +308,7 @@ export class GeminiAutomator implements AiAssistantAutomator {
       throw this.createError(
         "prompt-failed",
         "Submit button not found",
-        request.promptId
+        request.messageId
       );
     }
 
@@ -329,7 +329,7 @@ export class GeminiAutomator implements AiAssistantAutomator {
     handleDelta: (delta: ChatDelta) => void
   ): Promise<ChatResponse> {
     return watchStreamingResponse({
-      promptId: request.promptId,
+      messageId: request.messageId,
       timeoutMs: request.timeoutMs,
       streamingMessageSelector: this.selectors.streamingMessage || [],
       messageDataSpec: this.selectors.messageData,
@@ -390,13 +390,13 @@ export class GeminiAutomator implements AiAssistantAutomator {
   private createError(
     code: ChatError["code"],
     message: string,
-    promptId?: string,
+    messageId?: string,
     details?: Record<string, unknown>
   ): ChatError {
     return {
       code,
       message,
-      promptId,
+      messageId,
       details,
     };
   }

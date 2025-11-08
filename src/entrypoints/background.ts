@@ -1,18 +1,12 @@
-// entrypoints/background.ts
-
 import { browser } from "wxt/browser";
 import { WebsocketClient } from "../lib/services/websocket/client";
 import { WebsocketRouter } from "../lib/services/websocket/router";
-// import { RecorderService } from '../lib/services/recorder/service';
-import { detectAssistantIdFromUrl } from "../lib/services/automators/registry";
 import type {
   ContentToBackgroundNotification,
   RuntimeMessage,
 } from "../lib/types/runtime";
 
 export default defineBackground(() => {
-  // const recorderService = new RecorderService();
-
   let router: WebsocketRouter;
   const client = new WebsocketClient((message) => {
     console.log(message);
@@ -23,15 +17,6 @@ export default defineBackground(() => {
   // Listen for messages from content scripts and popup
   browser.runtime.onMessage.addListener(
     (message: RuntimeMessage, sender, sendResponse) => {
-      // Check if it's a request from the popup that expects a response
-      // if (isPopupRequest(message)) {
-      //   recorderService
-      //     .handleRequest(message)
-      //     .then(sendResponse)
-      //     .catch(console.error);
-      //   return true; // Indicates that the response is sent asynchronously
-      // }
-
       // Check if it's a notification from a content script
       if (isContentScriptNotification(message)) {
         // if (message.type === "recorder:fixture") {
@@ -47,21 +32,6 @@ export default defineBackground(() => {
     }
   );
 
-  // Listen for tab updates to trigger the recorder
-  // browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  //   // if (!recorderService.isRecording() || changeInfo.status !== "complete") {
-  //   //   return;
-  //   // }
-  //   const assistant = detectAssistantFromUrl(tab.url);
-  //   if (!assistant) {
-  //     return;
-  //   }
-  //   // void browser.tabs.sendMessage(tabId, {
-  //   //   type: "recorder:capture",
-  //   //   assistantId: assistant,
-  //   // });
-  // });
-
   // Start the websocket connection
   client.connect();
 
@@ -74,26 +44,6 @@ export default defineBackground(() => {
 });
 
 // Type guards to differentiate incoming runtime messages
-
-// const popupRequestTypes = new Set<PopupToBackgroundRequest["type"]>([
-//   "recorder:get-state",
-//   "recorder:set-recording",
-//   "recorder:clear-fixtures",
-//   "recorder:download-all",
-//   "recorder:get-fixture",
-// ]);
-
-// const isPopupRequest = (
-//   message: unknown
-// ): message is PopupToBackgroundRequest => {
-//   return (
-//     !!message &&
-//     typeof message === "object" &&
-//     "type" in message &&
-//     typeof message.type === "string" &&
-//     popupRequestTypes.has(message.type as PopupToBackgroundRequest["type"])
-//   );
-// };
 
 const contentNotificationTypes = new Set<
   ContentToBackgroundNotification["type"]

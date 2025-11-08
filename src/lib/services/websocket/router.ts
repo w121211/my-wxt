@@ -90,7 +90,7 @@ export class WebsocketRouter {
       return;
     }
 
-    this.pendingPrompts.set(request.promptId, {
+    this.pendingPrompts.set(request.messageId, {
       assistant,
       request,
       tabId,

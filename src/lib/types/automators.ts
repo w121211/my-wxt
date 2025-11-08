@@ -51,7 +51,7 @@ export interface ChatTarget {
 }
 
 export interface PromptSubmission {
-  readonly promptId: string;
+  readonly messageId: string;
   readonly prompt: string;
   readonly conversation?: ChatTarget;
   readonly modelId?: string;
@@ -59,14 +59,14 @@ export interface PromptSubmission {
 }
 
 export interface ChatDelta {
-  readonly promptId: string;
+  readonly messageId: string;
   readonly html?: string;
   readonly markdown?: string;
   readonly timestamp: string;
 }
 
 export interface ChatResponse {
-  readonly promptId: string;
+  readonly messageId: string;
   readonly html: string;
   readonly markdown: string;
   readonly finishedAt: string;
@@ -82,7 +82,7 @@ export interface ChatError {
     | "timeout"
     | "unexpected";
   readonly message: string;
-  readonly promptId?: string;
+  readonly messageId?: string;
   readonly details?: Record<string, unknown>;
 }
 
@@ -96,15 +96,12 @@ export interface AiAssistantAutomator {
   readonly urlGlobs: readonly string[];
   readonly selectors: SelectorMap;
 
-  // Extractors
+  // Tasks
   extractChatEntries(): Promise<readonly ChatEntry[]>;
   extractChatPage(target: ChatTarget): Promise<ChatPage>;
-
-  // Actions
   waitForLoggedIn(options: LoginWaitOptions): Promise<LoginState>;
   openChat(target: ChatTarget): Promise<void>;
   sendPrompt(request: PromptSubmission): Promise<void>;
-
   watchResponse(
     request: PromptSubmission,
     handleDelta: (delta: ChatDelta) => void

@@ -86,7 +86,7 @@
       func: () => ({
         hasAutomator: "__automator__" in window,
         hasAriaSnapshotter: "__snapshotAria__" in window,
-        hasHtmlSnapshotter: "__snapshotHtml__" in window,
+        hasYamlSnapshotter: "__snapshotYaml__" in window,
       }),
     });
     console.log("[my-wxt-panel] content script check:", checkResult[0]?.result);
@@ -145,7 +145,6 @@
       const result = await browser.scripting.executeScript({
         target: { tabId },
         func: async () => {
-          // @ts-ignore - will be available in content script context
           const automator = window.__automator__;
           if (automator && automator.waitForLoggedIn) {
             return await automator.waitForLoggedIn({ timeoutMs: 5000 });
@@ -172,7 +171,6 @@
       const result = await browser.scripting.executeScript({
         target: { tabId },
         func: async () => {
-          // @ts-ignore
           const automator = window.__automator__;
           if (automator && automator.extractChatEntries) {
             return await automator.extractChatEntries();
@@ -199,7 +197,6 @@
       const result = await browser.scripting.executeScript({
         target: { tabId },
         func: async () => {
-          // @ts-ignore
           const automator = window.__automator__;
           if (automator && automator.extractChatPage) {
             return await automator.extractChatPage({ id: "current" });
@@ -236,10 +233,12 @@
       const result = await browser.scripting.executeScript({
         target: { tabId },
         func: async (prompt: string) => {
-          // @ts-ignore
           const automator = window.__automator__;
           if (automator && automator.sendPrompt) {
-            await automator.sendPrompt({ prompt });
+            await automator.sendPrompt({
+              messageId: `test-${Date.now()}`,
+              prompt,
+            });
             return { success: true };
           }
           return { success: false };
@@ -271,7 +270,6 @@
       const result = await browser.scripting.executeScript({
         target: { tabId },
         func: async (chatId: string) => {
-          // @ts-ignore
           const automator = window.__automator__;
           if (automator && automator.openChat) {
             await automator.openChat({ id: chatId });
@@ -325,20 +323,18 @@
       const ariaSnapshot =
         ariaResult[0]?.result || "# Error getting ARIA snapshot";
 
-      // Get HTML snapshot
-      const htmlSnapshotResult = await browser.scripting.executeScript({
+      // Get YAML snapshot
+      const yamlSnapshotResult = await browser.scripting.executeScript({
         target: { tabId },
         func: () => {
-          // @ts-ignore
-          if (window.__snapshotHtml__) {
-            // @ts-ignore
-            return window.__snapshotHtml__(document.body);
+          if (window.__snapshotYaml__) {
+            return window.__snapshotYaml__(document.body);
           }
-          return "<!-- HTML snapshot not available -->";
+          return "# YAML snapshot not available";
         },
       });
-      const htmlSnapshot =
-        htmlSnapshotResult[0]?.result || "<!-- Error getting HTML snapshot -->";
+      const yamlSnapshot =
+        yamlSnapshotResult[0]?.result || "# Error getting YAML snapshot";
 
       // Get page screenshot (as PNG)
       let screenshotBlob: Blob | null = null;
@@ -379,7 +375,7 @@
       const zip = new JSZip();
       zip.file("page.html", pageHtml);
       zip.file("aria-snapshot.yml", ariaSnapshot);
-      zip.file("html-snapshot.html", htmlSnapshot);
+      zip.file("yaml-snapshot.yml", yamlSnapshot);
       if (screenshotBlob) {
         zip.file("page-screenshot.png", screenshotBlob);
       }
@@ -410,7 +406,7 @@
 
 <div class="panel">
   <header>
-    <h1>AI Automator Inspector</h1>
+    <h1>Automator Inspector</h1>
     <div class="header-actions">
       <button onclick={testSelectors} disabled={isRefreshing || !automator}>
         {isRefreshing ? "🔄 Refreshing..." : "🔄 Refresh"}
@@ -420,17 +416,17 @@
         disabled={isDownloading || !automator}
         class="btn-download"
       >
-        {isDownloading ? "⏳ Downloading..." : "📥 Download Snapshot"}
+        {isDownloading ? "⏳ Downloading..." : "📸 Download Snapshot"}
       </button>
     </div>
   </header>
 
   <section class="detection">
-    <h2>Platform Detection</h2>
+    <h2>Automator Detection</h2>
     {#if automator}
       <div class="detected">
         <div class="info-row">
-          <span class="label">Platform:</span>
+          <span class="label">Automator:</span>
           <span class="value success">{automator.id}</span>
         </div>
         <div class="info-row">

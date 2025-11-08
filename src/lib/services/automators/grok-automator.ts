@@ -129,7 +129,12 @@ const selectors = {
 export class GrokAutomator implements AiAssistantAutomator {
   static readonly id = "grok" as const;
   static readonly url = "https://grok.com/";
-  static readonly urlGlobs = ["*://grok.com/*"];
+  static readonly urlGlobs = [
+    "*://grok.com/*",
+    "*://*.grok.com/*",
+    "*://x.ai/*",
+    "*://*.x.ai/*",
+  ];
 
   readonly id = GrokAutomator.id;
   readonly url = GrokAutomator.url;
@@ -338,7 +343,7 @@ export class GrokAutomator implements AiAssistantAutomator {
       throw this.createError(
         "prompt-failed",
         "Submit button not found",
-        request.promptId
+        request.messageId
       );
     }
 
@@ -362,7 +367,7 @@ export class GrokAutomator implements AiAssistantAutomator {
     handleDelta: (delta: ChatDelta) => void
   ): Promise<ChatResponse> {
     return watchStreamingResponse({
-      promptId: request.promptId,
+      messageId: request.messageId,
       timeoutMs: request.timeoutMs,
       streamingMessageSelector: this.selectors.streamingMessage || [],
       messageDataSpec: this.selectors.messageData,
@@ -482,13 +487,13 @@ export class GrokAutomator implements AiAssistantAutomator {
   private createError(
     code: ChatError["code"],
     message: string,
-    promptId?: string,
+    messageId?: string,
     details?: Record<string, unknown>
   ): ChatError {
     return {
       code,
       message,
-      promptId,
+      messageId,
       details,
     };
   }

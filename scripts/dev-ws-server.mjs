@@ -39,8 +39,8 @@ const sendMessage = (message) => {
   activeSocket.send(payload);
 };
 
-const randomPromptId = () =>
-  `prompt-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`;
+const randomMessageId = () =>
+  `msg-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`;
 
 const helpText = `
 Commands:
@@ -148,7 +148,7 @@ rl.on('line', (line) => {
         type: 'chat:submit-prompt',
         assistant,
         request: {
-          promptId: randomPromptId(),
+          messageId: randomMessageId(),
           prompt: promptText,
         },
       });

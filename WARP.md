@@ -58,7 +58,7 @@ This is a browser extension built with WXT that captures and extracts chat data 
 - Handles server messages (hello, close, request-list, request-details, submit-prompt)
 - Manages assistant tab discovery and creation
 - Dispatches commands to content scripts
-- Tracks pending prompts by promptId
+- Tracks pending prompts by messageId
 
 ### Assistant System
 
