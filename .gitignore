@@ -27,3 +27,4 @@ web-ext.config.ts
 
 # This app
 tests/*snapshots*
+tmp/*snapshots*

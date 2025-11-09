@@ -17,8 +17,8 @@ You are tasked with implementing or continuing work on a V2 automator for an AI 
 ls tmp/snapshots/snapshot-{assistant}-*/yaml-snapshot.yml
 -->
 
-- [x] tmp/snapshots/snapshot-grok-1762602587114/yaml-snapshot.yml
-- [x] tmp/snapshots/snapshot-grok-1762602619450/yaml-snapshot.yml
+- [ ] tmp/snapshots/snapshot-grok-1762602587114/yaml-snapshot.yml
+- [ ] tmp/snapshots/snapshot-grok-1762602619450/yaml-snapshot.yml
 - [ ] tmp/snapshots/snapshot-grok-1762602628100/yaml-snapshot.yml
 - [ ] tmp/snapshots/snapshot-grok-1762602678874/yaml-snapshot.yml
 - [ ] tmp/snapshots/snapshot-grok-1762602699780/yaml-snapshot.yml

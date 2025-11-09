@@ -335,7 +335,7 @@
               }
               return "# YAML snapshot not available";
             } catch (error) {
-              return `# Error in __snapshotYaml__: ${error.message}`;
+              return `# Error in __snapshotYaml__: \n\n${error instanceof Error ? error.stack : String(error)}`;
             }
           },
         });
@@ -344,7 +344,7 @@
           yamlSnapshotResult[0]?.result || "# Error getting YAML snapshot";
       } catch (error) {
         console.error("Failed to execute YAML snapshot script:", error);
-        yamlSnapshot = `# Script execution failed: ${error.message}`;
+        yamlSnapshot = `# Script execution failed: \n\n${error instanceof Error ? error.stack : String(error)}`;
       }
 
       // Get page screenshot (as PNG)

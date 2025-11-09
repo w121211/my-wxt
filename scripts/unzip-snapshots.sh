@@ -1,9 +1,17 @@
 #!/bin/bash
 
-# Script to unzip all zip files in tests/snapshots directory
+# Script to unzip all zip files in a target directory
 # Each zip file will be extracted to a folder with the same name
+# Usage: ./unzip-snapshots.sh <target_directory>
 
-SNAPSHOTS_DIR="tests/snapshots"
+# Check if argument is provided
+if [ -z "$1" ]; then
+  echo "Error: No target directory specified"
+  echo "Usage: $0 <target_directory>"
+  exit 1
+fi
+
+SNAPSHOTS_DIR="$1"
 
 # Check if directory exists
 if [ ! -d "$SNAPSHOTS_DIR" ]; then

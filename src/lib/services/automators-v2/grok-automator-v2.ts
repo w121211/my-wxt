@@ -24,7 +24,6 @@ import {
   querySelectorAll,
   waitForElement,
   getText,
-  extractData,
 } from "../../utils/selectors";
 
 const selectors: SelectorMap = {
@@ -79,14 +78,15 @@ const selectors: SelectorMap = {
 
   messageInput: [
     'textarea[aria-label="Ask Grok anything"]',
+    'div[contenteditable="true"][role="textbox"]',
     'div[contenteditable="true"]',
+    'p[data-placeholder="How can Grok help?"]',
     'p[data-placeholder="What do you want to know?"]',
   ],
 
-  submitButton: [
-    'button[type="submit"][aria-label="Submit"]',
-    'button[aria-label="Submit"]',
-  ],
+  // No reliable snapshot of the enabled send button yet (logged-out page shows a disabled submit).
+  // Keep this empty so submitPrompt can surface a clear TODO until we capture the control while authenticated.
+  submitButton: [],
 
   attachButton: ['button[aria-label="Attach"]', 'button[aria-label*="attach"]'],
 
@@ -178,6 +178,14 @@ export class GrokAutomatorV2 implements AiAssistantAutomatorV2 {
     const { limit, sinceId } = params || {};
 
     try {
+      const historyContainer = querySelector(selectors.historyPageContainer);
+      if (historyContainer) {
+        return this.extractHistoryPageEntries(historyContainer, {
+          limit,
+          sinceId,
+        });
+      }
+
       // Wait for sidebar to be available
       const sidebar = await waitForElement(selectors.sidebar, {
         timeout: 5000,
@@ -325,6 +333,14 @@ export class GrokAutomatorV2 implements AiAssistantAutomatorV2 {
         };
       }
 
+      if (this.hasThoughtIndicator()) {
+        return {
+          chatId,
+          messageId,
+          state: "generating",
+        };
+      }
+
       // Check for error messages
       const errorElement = querySelector(selectors.errorMessage);
       if (errorElement) {
@@ -421,7 +437,9 @@ export class GrokAutomatorV2 implements AiAssistantAutomatorV2 {
       // Find and click submit button
       const submitButton = querySelector(selectors.submitButton);
       if (!submitButton) {
-        throw new Error("Submit button not found");
+        throw new Error(
+          "Submit button not found - need snapshot with authenticated send control"
+        );
       }
 
       // Check if aborted before submitting
@@ -498,6 +516,63 @@ export class GrokAutomatorV2 implements AiAssistantAutomatorV2 {
   // ============================================================================
   // Private Helper Methods
   // ============================================================================
+
+  private extractHistoryPageEntries(
+    container: Element,
+    params: ListChatEntriesParams = {}
+  ): ChatEntry[] {
+    const { limit, sinceId } = params;
+    const historyEntries = querySelectorAll(
+      selectors.historyChatEntries,
+      container
+    );
+    const entries: ChatEntry[] = [];
+
+    for (const entryElement of historyEntries) {
+      const linkElement = entryElement.querySelector('a[href^="/c/"]');
+      const href = linkElement?.getAttribute("href");
+      if (!href) continue;
+
+      const chatId = this.extractChatIdFromUrl(href);
+      if (!chatId) continue;
+
+      if (sinceId && chatId === sinceId) {
+        break;
+      }
+
+      const metadataBlock =
+        entryElement.querySelector("div > div:last-child") ??
+        entryElement.querySelector("div > div:nth-of-type(2)");
+      const fallbackTitleNode = metadataBlock?.firstElementChild ?? null;
+      const titleNode =
+        metadataBlock?.querySelector("div") ?? fallbackTitleNode;
+      const timestampNode = metadataBlock?.querySelector("span");
+
+      entries.push({
+        id: chatId,
+        title: titleNode ? getText(titleNode) : "Untitled",
+        url: `https://grok.com${href}`,
+        updatedAt: timestampNode ? getText(timestampNode) : "",
+      });
+
+      if (limit && entries.length >= limit) {
+        break;
+      }
+    }
+
+    return entries;
+  }
+
+  private hasThoughtIndicator(): boolean {
+    const container = querySelector(selectors.messageContainer);
+    if (!container) return false;
+
+    const spans = Array.from(container.querySelectorAll("span"));
+    return spans.some((span) => {
+      const text = span.textContent?.trim() ?? "";
+      return /^Thought for \d+s?/i.test(text);
+    });
+  }
 
   private async extractDefaultModel(): Promise<string | undefined> {
     try {
