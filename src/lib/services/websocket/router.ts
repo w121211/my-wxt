@@ -3,9 +3,9 @@
 import { browser } from "wxt/browser";
 import type {
   AiAssistantId,
-  PromptSubmission,
+  SubmitPromptInput,
   ChatTarget,
-} from "../../types/automators";
+} from "../../types/automators-v2";
 import type { ServerMessage, ExtensionMessage } from "../../types/websocket";
 import type { BackgroundToContentCommand } from "../../types/runtime";
 import type { WebsocketClient } from "./client";
@@ -19,16 +19,9 @@ type AssistantTab = {
   readonly tabId: number;
 };
 
-type PendingPrompt = {
-  readonly request: PromptSubmission;
-  readonly assistant: AiAssistantId;
-  readonly tabId: number;
-};
-
 export class WebsocketRouter {
   private desiredAssistant: AiAssistantId = "chatgpt";
   private lastKnownAssistantTab: AssistantTab | null = null;
-  private readonly pendingPrompts = new Map<string, PendingPrompt>();
 
   constructor(private readonly client: WebsocketClient) {}
 
@@ -52,30 +45,30 @@ export class WebsocketRouter {
         break;
       case "chat:request-list":
         this.dispatchToContent(message.assistant, {
-          type: "assistant:extract-chat-list",
+          type: "assistant:get-chat-list",
           assistantId: message.assistant,
         });
         break;
-      case "chat:request-details":
+      case "chat:request-page":
         this.dispatchToContent(message.assistant, {
-          type: "assistant:extract-chat",
+          type: "assistant:get-chat-page",
           assistantId: message.assistant,
           payload: message.target,
         });
         break;
       case "chat:submit-prompt":
-        this.handleSubmitPrompt(message.assistant, message.request);
+        this.handleSubmitPrompt(message.assistant, message.input);
         break;
     }
   };
 
   private async handleSubmitPrompt(
     assistant: AiAssistantId,
-    request: PromptSubmission
+    input: SubmitPromptInput
   ) {
     const tabId = await this.ensureAssistantTab(
       assistant,
-      request.conversation?.url
+      input.target?.url
     );
     if (tabId === null) {
       this.send({
@@ -90,16 +83,10 @@ export class WebsocketRouter {
       return;
     }
 
-    this.pendingPrompts.set(request.messageId, {
-      assistant,
-      request,
-      tabId,
-    });
-
     await this.dispatchToContent(assistant, {
-      type: "assistant:process-prompt",
+      type: "assistant:submit-prompt",
       assistantId: assistant,
-      payload: request,
+      payload: input,
     });
   }
 

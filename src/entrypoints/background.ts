@@ -19,12 +19,7 @@ export default defineBackground(() => {
     (message: RuntimeMessage, sender, sendResponse) => {
       // Check if it's a notification from a content script
       if (isContentScriptNotification(message)) {
-        // if (message.type === "recorder:fixture") {
-        //   void recorderService.addFixture(message.payload);
-        // } else {
-        // }
-
-        // Forward all other assistant notifications to the websocket server
+        // Forward all assistant notifications to the websocket server
         client.send(message);
       }
 
@@ -50,11 +45,10 @@ const contentNotificationTypes = new Set<
 >([
   "assistant:login-state",
   "chat:list",
-  "chat:details",
-  "chat:delta",
-  "chat:response",
+  "chat:page",
+  "prompt:submitted",
+  "conversation:status",
   "chat:error",
-  // "recorder:fixture",
 ]);
 
 const isContentScriptNotification = (

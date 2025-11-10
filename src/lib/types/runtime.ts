@@ -7,13 +7,12 @@ import type {
   ChatTarget,
   ChatEntry,
   ChatPage,
-  ChatDelta,
-  ChatResponse,
   ChatError,
   LoginState,
-  PromptSubmission,
-} from "./automators";
-import type { RecorderFixture, RecorderUiState } from "./recorder";
+  SubmitPromptInput,
+  SubmitPromptResult,
+  ConversationStatus,
+} from "./automators-v2";
 
 // ============================================================================
 // Background → Content Script Commands
@@ -23,23 +22,19 @@ import type { RecorderFixture, RecorderUiState } from "./recorder";
  * Commands sent FROM background TO content scripts
  */
 export type BackgroundToContentCommand =
-  // | {
-  //     readonly type: "recorder:capture";
-  //     readonly assistantId: AssistantId | "unknown";
-  //   }
   | {
-      readonly type: "assistant:extract-chat-list";
+      readonly type: "assistant:get-chat-list";
       readonly assistantId: AiAssistantId;
     }
   | {
-      readonly type: "assistant:extract-chat";
+      readonly type: "assistant:get-chat-page";
       readonly assistantId: AiAssistantId;
       readonly payload: ChatTarget;
     }
   | {
-      readonly type: "assistant:process-prompt";
+      readonly type: "assistant:submit-prompt";
       readonly assistantId: AiAssistantId;
-      readonly payload: PromptSubmission;
+      readonly payload: SubmitPromptInput;
     };
 
 // ============================================================================
@@ -61,72 +56,25 @@ export type ContentToBackgroundNotification =
       readonly payload: readonly ChatEntry[];
     }
   | {
-      readonly type: "chat:details";
+      readonly type: "chat:page";
       readonly assistantId: AiAssistantId;
       readonly payload: ChatPage;
     }
   | {
-      readonly type: "chat:delta";
+      readonly type: "prompt:submitted";
       readonly assistantId: AiAssistantId;
-      readonly payload: ChatDelta;
+      readonly payload: SubmitPromptResult;
     }
   | {
-      readonly type: "chat:response";
+      readonly type: "conversation:status";
       readonly assistantId: AiAssistantId;
-      readonly payload: ChatResponse;
+      readonly payload: ConversationStatus;
     }
   | {
       readonly type: "chat:error";
       readonly assistantId: AiAssistantId;
       readonly payload: ChatError;
     };
-// | {
-//     readonly type: "recorder:fixture";
-//     readonly payload: RecorderFixture;
-//   };
-
-// ============================================================================
-// Popup ↔ Background (Request/Response Pattern)
-// ============================================================================
-
-/**
- * Requests sent FROM popup TO background (expects a response via sendResponse)
- */
-// export type PopupToBackgroundRequest =
-//   | {
-//       readonly type: "recorder:get-state";
-//     }
-//   | {
-//       readonly type: "recorder:set-recording";
-//       readonly recording: boolean;
-//     }
-//   | {
-//       readonly type: "recorder:clear-fixtures";
-//     }
-//   | {
-//       readonly type: "recorder:download-all";
-//     }
-//   | {
-//       readonly type: "recorder:get-fixture";
-//       readonly id: string;
-//     };
-
-/**
- * Response types for PopupToBackgroundRequest
- */
-// export type PopupToBackgroundResponse =
-//   | RecorderUiState
-//   | RecorderFixture
-//   | { readonly ok: true }
-//   | null;
-
-/**
- * Broadcasts sent FROM background TO popup (one-way, no response expected)
- */
-// export type BackgroundToPopupBroadcast = {
-//   readonly type: "recorder:state-updated";
-//   readonly payload: RecorderUiState;
-// };
 
 // ============================================================================
 // Union Types for Convenience

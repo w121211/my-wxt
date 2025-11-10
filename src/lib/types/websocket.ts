@@ -6,12 +6,12 @@ import type {
   ChatTarget,
   ChatEntry,
   ChatPage,
-  ChatDelta,
-  ChatResponse,
   ChatError,
   LoginState,
-  PromptSubmission,
-} from "./automators";
+  SubmitPromptInput,
+  SubmitPromptResult,
+  ConversationStatus,
+} from "./automators-v2";
 
 /**
  * Messages sent FROM the local server TO the extension
@@ -31,14 +31,14 @@ export type ServerMessage =
       readonly assistant: AiAssistantId;
     }
   | {
-      readonly type: "chat:request-details";
+      readonly type: "chat:request-page";
       readonly assistant: AiAssistantId;
       readonly target: ChatTarget;
     }
   | {
       readonly type: "chat:submit-prompt";
       readonly assistant: AiAssistantId;
-      readonly request: PromptSubmission;
+      readonly input: SubmitPromptInput;
     };
 
 /**
@@ -64,19 +64,19 @@ export type ExtensionMessage =
       readonly payload: readonly ChatEntry[];
     }
   | {
-      readonly type: "chat:details";
+      readonly type: "chat:page";
       readonly assistantId: AiAssistantId;
       readonly payload: ChatPage;
     }
   | {
-      readonly type: "chat:delta";
+      readonly type: "prompt:submitted";
       readonly assistantId: AiAssistantId;
-      readonly payload: ChatDelta;
+      readonly payload: SubmitPromptResult;
     }
   | {
-      readonly type: "chat:response";
+      readonly type: "conversation:status";
       readonly assistantId: AiAssistantId;
-      readonly payload: ChatResponse;
+      readonly payload: ConversationStatus;
     }
   | {
       readonly type: "chat:error";

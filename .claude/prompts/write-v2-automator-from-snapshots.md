@@ -13,21 +13,12 @@ You are tasked with implementing or continuing work on a V2 automator for an AI 
 
 ### Available Snapshots
 
-<!-- Shell command to list all YAML snapshots:
-ls tmp/snapshots/snapshot-{assistant}-*/yaml-snapshot.yml
--->
+<!-- ls tmp/snapshots-t3/*/*.{yml,json} | grep -v 'aria-snapshot.yml'-->
 
-- [ ] tmp/snapshots/snapshot-grok-1762602587114/yaml-snapshot.yml
-- [ ] tmp/snapshots/snapshot-grok-1762602619450/yaml-snapshot.yml
-- [ ] tmp/snapshots/snapshot-grok-1762602628100/yaml-snapshot.yml
-- [ ] tmp/snapshots/snapshot-grok-1762602678874/yaml-snapshot.yml
-- [ ] tmp/snapshots/snapshot-grok-1762602699780/yaml-snapshot.yml
-- [ ] tmp/snapshots/snapshot-grok-1762602722427/yaml-snapshot.yml
-- [ ] tmp/snapshots/snapshot-grok-1762602739320/yaml-snapshot.yml
-- [ ] tmp/snapshots/snapshot-grok-1762602754272/yaml-snapshot.yml
-- [ ] tmp/snapshots/snapshot-grok-1762602763757/yaml-snapshot.yml
+YAML snapshots and results:
 
-<!-- Mark with [x] when snapshot has been analyzed -->
+tmp/snapshots-t3/snapshot-grok-1762744245143/results.json
+tmp/snapshots-t3/snapshot-grok-1762744245143/yaml-snapshot.yml
 
 ---
 
