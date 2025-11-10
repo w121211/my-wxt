@@ -2,21 +2,22 @@ import { browser } from "wxt/browser";
 import { getAutomatorByUrl } from "../lib/services/automators/registry";
 import { snapshotAria } from "../lib/utils/aria-snapshot";
 import { snapshotYaml } from "../lib/utils/yaml-snapshot";
-import type {
-  BackgroundToContentCommand,
-  ContentToBackgroundNotification,
-} from "../lib/types/runtime";
+import { resolveCssSelector } from "../lib/utils/selectors";
 import type {
   AiAssistantAutomatorV2,
   AiAssistantId,
-  ChatTarget,
-  SubmitPromptInput,
   ConversationRef,
 } from "../lib/types/automators-v2";
+import type {
+  DevToolsTestMessage,
+  DevToolsCommand,
+  FunctionResult,
+  SelectorResults,
+  SelectorTestResult,
+} from "../lib/types/devtools-messages";
 
 declare global {
   interface Window {
-    __automator__?: AiAssistantAutomatorV2;
     __snapshotAria__?: (element: Element) => string;
     __snapshotYaml__?: (element: Element) => string;
   }
@@ -32,201 +33,374 @@ export default defineContentScript({
     "*://grok.com/*",
   ],
   async main() {
-    // console.log("[my-wxt] content script main() started");
+    console.log("[content] Content script V4 started");
+
     const automator = getAutomatorByUrl(window.location.href);
     if (!automator) {
-      console.log("[my-wxt] no automator found for this URL");
+      console.log("[content] No automator found for this URL");
       return;
     }
-    console.log("[my-wxt] automator found:", automator.id);
+
+    console.log("[content] Automator found:", automator.id);
     const assistantId = automator.id;
 
     // Expose automator to window for DevTools inspector
-    (window as any).__automator__ = automator;
     (window as any).__snapshotAria__ = snapshotAria;
     (window as any).__snapshotYaml__ = snapshotYaml;
     console.log(
-      "[my-wxt] __automator__, __snapshotAria__, __snapshotYaml__ exposed to window"
+      "[content] __snapshotAria__, __snapshotYaml__ exposed to window"
     );
 
-    // Listen for commands from the background script and devtools panel
+    // Initialize test runner
+    const testRunner = new AutomatorTestRunner(automator, assistantId);
+
+    // Listen for commands from DevTools panel
     browser.runtime.onMessage.addListener(
       (message: any, _sender, sendResponse) => {
-        // Handle devtools panel function testing
-        if (message.type === "TEST_AUTOMATOR_FUNCTION") {
-          handleTestAutomatorFunction(automator, message)
-            .then(sendResponse)
-            .catch((error) => {
-              console.error("[Content] Error in handleTestAutomatorFunction:", error);
-              sendResponse({
-                success: false,
-                error: error.message || String(error),
-              });
-            });
-          return true; // Indicates we will send a response asynchronously
-        }
+        const command = message as DevToolsCommand;
 
-        // Handle background script commands
-        const command = message as BackgroundToContentCommand;
-        // All other commands are assistant-specific
-        if (command.assistantId !== assistantId) {
+        // Only handle DevTools commands for this automator
+        if ("automatorId" in command && command.automatorId !== assistantId) {
           return;
         }
 
         switch (command.type) {
-          case "assistant:get-chat-list":
-            handleGetChatList(automator, assistantId);
-            break;
-          case "assistant:get-chat-page":
-            handleGetChatPage(automator, assistantId, command.payload);
-            break;
-          case "assistant:submit-prompt":
-            handleSubmitPrompt(automator, assistantId, command.payload);
-            break;
+          case "devtools:run-tests":
+            testRunner
+              .runFullTestSuite()
+              .then(() => sendResponse({ success: true }))
+              .catch((error) =>
+                sendResponse({ success: false, error: error.message })
+              );
+            return true; // Async response
+
+          case "devtools:test-function":
+            testRunner
+              .testFunction(command.functionName, command.args as any[])
+              .then((result) => sendResponse({ success: true, result }))
+              .catch((error) =>
+                sendResponse({ success: false, error: error.message })
+              );
+            return true; // Async response
+
+          case "devtools:refresh-selectors":
+            testRunner
+              .testSelectors()
+              .then(() => sendResponse({ success: true }))
+              .catch((error) =>
+                sendResponse({ success: false, error: error.message })
+              );
+            return true; // Async response
+
+          case "devtools:navigate-to-chat":
+            testRunner
+              .testFunction("goToChatPage", [{ chatId: command.chatId }])
+              .then((result) => sendResponse({ success: true, result }))
+              .catch((error) =>
+                sendResponse({ success: false, error: error.message })
+              );
+            return true; // Async response
+
+          case "devtools:submit-prompt":
+            testRunner
+              .submitPromptAndWatch(
+                command.prompt,
+                command.chatId,
+                command.messageId
+              )
+              .then((result) => sendResponse({ success: true, result }))
+              .catch((error) =>
+                sendResponse({ success: false, error: error.message })
+              );
+            return true; // Async response
         }
       }
     );
 
-    // Perform initial login check
-    initializeLoginState(automator, assistantId);
+    // Auto-run tests on initialization
+    console.log("[content-v4] Starting automatic test suite...");
+    await testRunner.runFullTestSuite();
   },
 });
 
-const sendNotification = (notification: ContentToBackgroundNotification) => {
-  return browser.runtime.sendMessage(notification);
-};
+/**
+ * AutomatorTestRunner - Runs tests and streams results to DevTools
+ */
+class AutomatorTestRunner {
+  constructor(
+    private automator: AiAssistantAutomatorV2,
+    private assistantId: AiAssistantId
+  ) {}
 
-const notifyAutomatorError = (
-  assistantId: AiAssistantId,
-  error: unknown,
-  context: string,
-  messageId?: string
-) => {
-  return sendNotification({
-    type: "chat:error",
-    assistantId,
-    payload: {
-      code: "unexpected",
-      message: `${context} failed: ${error}`,
-      details: { context, messageId },
-    },
-  });
-};
-
-const initializeLoginState = async (
-  automator: AiAssistantAutomatorV2,
-  assistantId: AiAssistantId
-) => {
-  try {
-    const state = await automator.getLoginState({
-      timeoutMs: 10_000,
-      pollIntervalMs: 500,
+  /**
+   * Send a test message to DevTools panel
+   */
+  private sendMessage(message: DevToolsTestMessage): void {
+    browser.runtime.sendMessage(message).catch((error) => {
+      console.error("[content-v4] Failed to send message:", error);
     });
-    await sendNotification({
-      type: "assistant:login-state",
-      assistantId,
-      payload: state,
-    });
-  } catch (error) {
-    await notifyAutomatorError(assistantId, error, "getLoginState");
   }
-};
 
-const handleGetChatList = async (
-  automator: AiAssistantAutomatorV2,
-  assistantId: AiAssistantId
-) => {
-  try {
-    const chats = await automator.getChatEntries();
-    await sendNotification({ type: "chat:list", assistantId, payload: chats });
-  } catch (error) {
-    await notifyAutomatorError(assistantId, error, "getChatEntries");
-  }
-};
+  /**
+   * Run the complete test suite
+   */
+  async runFullTestSuite(): Promise<void> {
+    const startTime = Date.now();
 
-const handleGetChatPage = async (
-  automator: AiAssistantAutomatorV2,
-  assistantId: AiAssistantId,
-  target: ChatTarget
-) => {
-  try {
-    const chatPage = await automator.getChatPage(target);
-    await sendNotification({
-      type: "chat:page",
-      assistantId,
-      payload: chatPage,
-    });
-  } catch (error) {
-    await notifyAutomatorError(assistantId, error, "getChatPage");
-  }
-};
-
-const handleSubmitPrompt = async (
-  automator: AiAssistantAutomatorV2,
-  assistantId: AiAssistantId,
-  input: SubmitPromptInput
-) => {
-  try {
-    // Submit the prompt
-    const result = await automator.submitPrompt(input);
-
-    // Notify that prompt was submitted
-    await sendNotification({
-      type: "prompt:submitted",
-      assistantId,
-      payload: result,
+    this.sendMessage({
+      type: "test:suite:start",
+      automatorId: this.assistantId,
+      timestamp: new Date().toISOString(),
     });
 
-    // Watch the conversation status and forward updates
-    const conversationRef: ConversationRef = {
-      messageId: result.messageId,
-      chatId: result.chatId,
-    };
+    this.sendMessage({
+      type: "automator:status",
+      automatorId: this.assistantId,
+      status: "testing",
+      message: "Running test suite...",
+      timestamp: new Date().toISOString(),
+    });
 
-    automator.watchConversationStatus(conversationRef, async (status) => {
-      await sendNotification({
-        type: "conversation:status",
-        assistantId,
-        payload: status,
+    let passed = 0;
+    let failed = 0;
+    let total = 0;
+
+    try {
+      // Test selectors
+      await this.testSelectors();
+
+      // Test extractor functions
+      const extractorTests = [
+        { name: "getLoginState", args: [{ timeoutMs: 5000 }] },
+        { name: "getChatEntries", args: [] },
+        // Skip getChatPage test - requires a valid chatId parameter
+        // { name: "getChatPage", args: [] },
+      ];
+
+      for (const test of extractorTests) {
+        total++;
+        const result = await this.testFunction(test.name, test.args);
+        if (result.status === "success") {
+          passed++;
+        } else {
+          failed++;
+        }
+      }
+
+      this.sendMessage({
+        type: "automator:status",
+        automatorId: this.assistantId,
+        status: "idle",
+        message: "Test suite completed",
+        timestamp: new Date().toISOString(),
       });
-    });
-  } catch (error) {
-    await notifyAutomatorError(assistantId, error, "submitPrompt");
+
+      this.sendMessage({
+        type: "test:suite:complete",
+        automatorId: this.assistantId,
+        timestamp: new Date().toISOString(),
+        summary: {
+          total,
+          passed,
+          failed,
+          duration: Date.now() - startTime,
+        },
+      });
+    } catch (error: any) {
+      this.sendMessage({
+        type: "automator:status",
+        automatorId: this.assistantId,
+        status: "error",
+        message: `Test suite failed: ${error.message}`,
+        timestamp: new Date().toISOString(),
+      });
+    }
   }
-};
 
-// Handle function testing from devtools panel
-const handleTestAutomatorFunction = async (
-  automator: AiAssistantAutomatorV2,
-  message: { functionName: string; args: any[] }
-) => {
-  const { functionName, args } = message;
+  /**
+   * Test all selectors and stream results
+   */
+  async testSelectors(): Promise<void> {
+    console.log("[content-v4] Testing selectors...");
 
-  console.log("[Content] Testing automator function:", functionName, "with args:", args);
+    this.sendMessage({
+      type: "test:started",
+      automatorId: this.assistantId,
+      testName: "selectors",
+      category: "selector",
+      timestamp: new Date().toISOString(),
+    });
 
-  try {
-    // Check if the function exists on the automator
-    if (typeof (automator as any)[functionName] !== "function") {
-      console.error("[Content] Function not found:", functionName);
-      return {
-        success: false,
-        error: `Function "${functionName}" not found on automator`,
-      };
+    const results: Record<string, SelectorTestResult> = {};
+
+    for (const [name, selector] of Object.entries(this.automator.selectors)) {
+      try {
+        const resolvedSelector = resolveCssSelector(selector);
+        const selectorString = Array.isArray(resolvedSelector)
+          ? resolvedSelector[0]
+          : resolvedSelector;
+
+        const elements = document.querySelectorAll(selectorString);
+        const samples = Array.from(elements)
+          .slice(0, 3)
+          .map((el) => el.textContent?.trim() ?? null);
+
+        results[name] = {
+          status: elements.length > 0 ? "found" : "not-found",
+          count: elements.length,
+          samples,
+        };
+      } catch (error) {
+        results[name] = {
+          status: "not-found",
+          count: 0,
+          samples: [],
+        };
+      }
     }
 
-    // Execute the function
-    const result = await (automator as any)[functionName](...args);
-    console.log("[Content] Function result:", result);
+    this.sendMessage({
+      type: "selector:results",
+      automatorId: this.assistantId,
+      results,
+      timestamp: new Date().toISOString(),
+    });
 
-    return {
-      success: true,
-      data: result,
-    };
-  } catch (error: any) {
-    console.error("[Content] Error executing function:", error);
-    return {
-      success: false,
-      error: error.message || String(error),
-    };
+    console.log("[content-v4] Selector testing complete:", results);
   }
-};
+
+  /**
+   * Test a single automator function
+   */
+  async testFunction(
+    functionName: string,
+    args: any[] = []
+  ): Promise<FunctionResult> {
+    console.log(
+      `[content-v4] Testing function: ${functionName} with args:`,
+      args
+    );
+
+    const category = this.categorizeFunction(functionName);
+
+    this.sendMessage({
+      type: "test:started",
+      automatorId: this.assistantId,
+      testName: functionName,
+      category,
+      timestamp: new Date().toISOString(),
+    });
+
+    try {
+      // Check if function exists
+      if (typeof (this.automator as any)[functionName] !== "function") {
+        const error = `Function "${functionName}" not found on automator`;
+        this.sendMessage({
+          type: "test:error",
+          automatorId: this.assistantId,
+          testName: functionName,
+          category,
+          error,
+          timestamp: new Date().toISOString(),
+        });
+        return { status: "error", error };
+      }
+
+      // Execute function
+      const start = Date.now();
+      const data = await (this.automator as any)[functionName](...args);
+      const duration = Date.now() - start;
+
+      const result: FunctionResult = {
+        status: "success",
+        data,
+        duration,
+      };
+
+      this.sendMessage({
+        type: "test:result",
+        automatorId: this.assistantId,
+        testName: functionName,
+        category,
+        result,
+        timestamp: new Date().toISOString(),
+      });
+
+      console.log(`[content-v4] Function ${functionName} succeeded:`, data);
+      return result;
+    } catch (error: any) {
+      const result: FunctionResult = {
+        status: "error",
+        error: error.message || String(error),
+      };
+
+      this.sendMessage({
+        type: "test:error",
+        automatorId: this.assistantId,
+        testName: functionName,
+        category,
+        error: error.message || String(error),
+        timestamp: new Date().toISOString(),
+      });
+
+      console.error(`[content-v4] Function ${functionName} failed:`, error);
+      return result;
+    }
+  }
+
+  /**
+   * Submit a prompt and watch conversation status
+   * Note: Assumes we're already on the correct page (use goToChatPage first if needed)
+   */
+  async submitPromptAndWatch(
+    prompt: string,
+    chatId?: string,
+    messageId?: string
+  ): Promise<FunctionResult> {
+    const generatedMessageId = messageId || `test-${Date.now()}`;
+
+    // Submit prompt (without navigation)
+    const result = await this.testFunction("submitPrompt", [
+      { prompt, chatId },
+    ]);
+
+    if (result.status === "success" && result.data) {
+      // Start watching conversation status
+      const conversationRef: ConversationRef = {
+        messageId: result.data.messageId || generatedMessageId,
+        chatId: result.data.chatId || chatId || "current",
+      };
+
+      console.log(
+        "[content-v4] Starting conversation watcher for:",
+        conversationRef
+      );
+
+      // Watch and stream updates
+      this.automator.watchConversationStatus(conversationRef, (status) => {
+        console.log("[content-v4] Conversation status update:", status);
+
+        this.sendMessage({
+          type: "watcher:update",
+          automatorId: this.assistantId,
+          watcherName: "watchConversationStatus",
+          data: status,
+          timestamp: new Date().toISOString(),
+        });
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * Categorize function by name
+   */
+  private categorizeFunction(
+    functionName: string
+  ): "extractor" | "action" | "watcher" {
+    if (functionName.startsWith("get")) return "extractor";
+    if (functionName.startsWith("watch")) return "watcher";
+    return "action";
+  }
+}

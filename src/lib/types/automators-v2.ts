@@ -157,6 +157,11 @@ export interface AiAssistantAutomatorV2 {
   getConversationStatus(ref: ConversationRef): Promise<ConversationStatus>;
 
   // Actions
+  goToChatPage(input: {
+    readonly chatId?: string;
+    readonly target?: ChatTarget;
+  }): Promise<{ navigated: boolean; url: string }>;
+
   submitPrompt(
     input: SubmitPromptInput,
     signal?: AbortSignal

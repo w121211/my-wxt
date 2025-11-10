@@ -386,28 +386,56 @@ export class GrokAutomatorV2 implements AiAssistantAutomatorV2 {
   // Actions
   // ============================================================================
 
+  /**
+   * Navigate to a chat page (or home for new chat)
+   * NOTE: This will reload the page if navigation is needed
+   */
+  async goToChatPage(input: {
+    readonly chatId?: string;
+    readonly target?: ChatTarget;
+  }): Promise<{ navigated: boolean; url: string }> {
+    const { chatId, target } = input;
+    const currentUrl = window.location.href;
+
+    let targetUrl: string;
+
+    if (chatId) {
+      targetUrl = `https://grok.com/c/${chatId}`;
+      if (currentUrl.includes(`/c/${chatId}`)) {
+        return { navigated: false, url: currentUrl };
+      }
+    } else if (target?.url) {
+      targetUrl = target.url;
+      if (currentUrl === targetUrl) {
+        return { navigated: false, url: currentUrl };
+      }
+    } else {
+      targetUrl = "https://grok.com/";
+      // Check if already on home page
+      if (
+        currentUrl === "https://grok.com/" ||
+        currentUrl === "https://grok.com" ||
+        currentUrl.match(/^https:\/\/grok\.com\/?$/)
+      ) {
+        return { navigated: false, url: currentUrl };
+      }
+    }
+
+    // Navigate to target URL
+    window.location.href = targetUrl;
+    // This line won't execute if navigation happens, but included for type safety
+    return { navigated: true, url: targetUrl };
+  }
+
   async submitPrompt(
     input: SubmitPromptInput,
     signal?: AbortSignal
   ): Promise<SubmitPromptResult> {
-    const { prompt, chatId, target } = input;
+    const { prompt } = input;
 
     try {
-      // Navigate to the chat if chatId is provided
-      if (chatId) {
-        const currentUrl = window.location.href;
-        if (!currentUrl.includes(`/c/${chatId}`)) {
-          window.location.href = `https://grok.com/c/${chatId}`;
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-      } else if (target?.url) {
-        window.location.href = target.url;
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      } else {
-        // Navigate to home for new chat
-        window.location.href = "https://grok.com/";
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
+      // Don't navigate here - assume we're already on the right page
+      // Use goToChatPage() separately if navigation is needed
 
       // Wait for input field to be available
       const inputElement = await waitForElement(selectors.messageInput, {
