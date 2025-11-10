@@ -89,6 +89,13 @@ export type DevToolsTestMessage =
       readonly watcherName: string;
       readonly data: any;
       readonly timestamp: string;
+    }
+  | {
+      readonly type: "snapshots:results";
+      readonly automatorId: AiAssistantId | "none"; // "none" for pages without automator
+      readonly ariaSnapshot: string;
+      readonly yamlSnapshot: string;
+      readonly timestamp: string;
     };
 
 // ====================
@@ -121,6 +128,10 @@ export type DevToolsCommand =
       readonly type: "devtools:navigate-to-chat";
       readonly automatorId: AiAssistantId;
       readonly chatId?: string;
+    }
+  | {
+      readonly type: "devtools:get-snapshots";
+      readonly automatorId: AiAssistantId | "none"; // "none" for pages without automator
     };
 
 // ====================

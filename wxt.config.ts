@@ -6,6 +6,11 @@ export default defineConfig({
   modules: ["@wxt-dev/module-svelte"],
   manifest: {
     permissions: ["scripting", "activeTab", "tabs"],
-    host_permissions: ["<all_urls>"],
+  },
+  webExt: {
+    chromiumArgs: [
+      "--user-data-dir=./.wxt/chrome-data",
+      "--disable-blink-features=AutomationControlled",
+    ],
   },
 });

@@ -16,40 +16,68 @@ import type {
   SelectorTestResult,
 } from "../lib/types/devtools-messages";
 
-declare global {
-  interface Window {
-    __snapshotAria__?: (element: Element) => string;
-    __snapshotYaml__?: (element: Element) => string;
-  }
-}
-
 export default defineContentScript({
   matches: [
-    "*://chat.openai.com/*",
-    "*://chatgpt.com/*",
-    "*://claude.ai/*",
-    "*://gemini.google.com/*",
-    "*://aistudio.google.com/*",
-    "*://grok.com/*",
+    "<all_urls>",
+    // "*://chat.openai.com/*",
+    // "*://chatgpt.com/*",
+    // "*://claude.ai/*",
+    // "*://gemini.google.com/*",
+    // "*://aistudio.google.com/*",
+    // "*://grok.com/*",
   ],
   async main() {
     console.log("[content] Content script V4 started");
 
     const automator = getAutomatorByUrl(window.location.href);
+
     if (!automator) {
       console.log("[content] No automator found for this URL");
+
+      // Still listen for snapshot requests even without an automator
+      browser.runtime.onMessage.addListener(
+        (message: any, _sender, sendResponse) => {
+          const command = message as DevToolsCommand;
+
+          if (command.type === "devtools:get-snapshots") {
+            // Generate snapshots without automator
+            try {
+              const ariaSnapshot = snapshotAria(document.body);
+              const yamlSnapshot = snapshotYaml(document.body);
+
+              browser.runtime.sendMessage({
+                type: "snapshots:results",
+                automatorId: "none",
+                ariaSnapshot,
+                yamlSnapshot,
+                timestamp: new Date().toISOString(),
+              }).catch((error) => {
+                console.error("[content-v4] Failed to send snapshot message:", error);
+              });
+
+              sendResponse({ success: true });
+            } catch (error: any) {
+              console.error("[content-v4] Failed to generate snapshots:", error);
+
+              browser.runtime.sendMessage({
+                type: "snapshots:results",
+                automatorId: "none",
+                ariaSnapshot: `# Error generating ARIA snapshot: ${error.message}`,
+                yamlSnapshot: `# Error generating YAML snapshot: ${error.message}`,
+                timestamp: new Date().toISOString(),
+              }).catch(console.error);
+
+              sendResponse({ success: false, error: error.message });
+            }
+            return true; // Async response
+          }
+        }
+      );
       return;
     }
 
     console.log("[content] Automator found:", automator.id);
     const assistantId = automator.id;
-
-    // Expose automator to window for DevTools inspector
-    (window as any).__snapshotAria__ = snapshotAria;
-    (window as any).__snapshotYaml__ = snapshotYaml;
-    console.log(
-      "[content] __snapshotAria__, __snapshotYaml__ exposed to window"
-    );
 
     // Initialize test runner
     const testRunner = new AutomatorTestRunner(automator, assistantId);
@@ -108,6 +136,15 @@ export default defineContentScript({
                 command.chatId,
                 command.messageId
               )
+              .then((result) => sendResponse({ success: true, result }))
+              .catch((error) =>
+                sendResponse({ success: false, error: error.message })
+              );
+            return true; // Async response
+
+          case "devtools:get-snapshots":
+            testRunner
+              .getSnapshots()
               .then((result) => sendResponse({ success: true, result }))
               .catch((error) =>
                 sendResponse({ success: false, error: error.message })
@@ -391,6 +428,38 @@ class AutomatorTestRunner {
     }
 
     return result;
+  }
+
+  /**
+   * Get ARIA and YAML snapshots of the page
+   */
+  async getSnapshots(): Promise<void> {
+    console.log("[content-v4] Generating snapshots...");
+
+    try {
+      const ariaSnapshot = snapshotAria(document.body);
+      const yamlSnapshot = snapshotYaml(document.body);
+
+      this.sendMessage({
+        type: "snapshots:results",
+        automatorId: this.assistantId,
+        ariaSnapshot,
+        yamlSnapshot,
+        timestamp: new Date().toISOString(),
+      });
+
+      console.log("[content-v4] Snapshots sent successfully");
+    } catch (error: any) {
+      console.error("[content-v4] Failed to generate snapshots:", error);
+
+      this.sendMessage({
+        type: "snapshots:results",
+        automatorId: this.assistantId,
+        ariaSnapshot: `# Error generating ARIA snapshot: ${error.message}`,
+        yamlSnapshot: `# Error generating YAML snapshot: ${error.message}`,
+        timestamp: new Date().toISOString(),
+      });
+    }
   }
 
   /**

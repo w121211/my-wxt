@@ -79,6 +79,7 @@ export function getAutomatorByUrl(url: string): AiAssistantAutomatorV2 | null {
   if (assistantId === "grok") {
     return automatorRegistry["grok"];
   } else {
-    throw new Error("Not implement yet");
+    console.warn(`[registry] No automator implemented for URL: ${url}, assistantId: ${assistantId}`);
+    return null;
   }
 }

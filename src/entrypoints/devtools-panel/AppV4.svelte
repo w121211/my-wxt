@@ -34,6 +34,10 @@
   let isRefreshing = $state(false);
   let isDownloading = $state(false);
 
+  // Snapshot state
+  let latestAriaSnapshot = $state<string>("");
+  let latestYamlSnapshot = $state<string>("");
+
   // Message listener
   let messageListener: ((message: any) => void) | null = null;
 
@@ -98,9 +102,12 @@
   function handleTestMessage(message: DevToolsTestMessage) {
     console.log("[AppV4] Received message:", message);
 
-    // Only handle messages for current automator
-    if (automator && message.automatorId !== automator.id) {
-      return;
+    // Don't filter snapshot results - they need to be handled even without automator
+    if (message.type !== "snapshots:results") {
+      // Only handle messages for current automator
+      if (automator && message.automatorId !== automator.id) {
+        return;
+      }
     }
 
     switch (message.type) {
@@ -168,6 +175,13 @@
           ...watcherUpdates[message.watcherName],
           { ...message.data, timestamp: message.timestamp },
         ];
+        break;
+
+      case "snapshots:results":
+        // Store the latest snapshots
+        latestAriaSnapshot = message.ariaSnapshot;
+        latestYamlSnapshot = message.yamlSnapshot;
+        console.log("[AppV4] Snapshots received and stored");
         break;
     }
   }
@@ -276,7 +290,7 @@
   // }
 
   async function downloadSnapshot() {
-    if (!automator || isDownloading) return;
+    if (isDownloading) return;
 
     isDownloading = true;
 
@@ -290,44 +304,45 @@
       });
       const pageHtml = htmlResult[0]?.result || "";
 
-      // Get ARIA snapshot
-      const ariaResult = await browser.scripting.executeScript({
-        target: { tabId },
-        func: () => {
-          // @ts-ignore
-          if (window.__snapshotAria__) {
-            // @ts-ignore
-            return window.__snapshotAria__(document.body);
-          }
-          return "# ARIA snapshot not available";
-        },
-      });
-      const ariaSnapshot =
-        ariaResult[0]?.result || "# Error getting ARIA snapshot";
-
-      // Get YAML snapshot
+      // Get ARIA and YAML snapshots via message passing
+      let ariaSnapshot = "# Error getting ARIA snapshot";
       let yamlSnapshot = "# Error getting YAML snapshot";
+
       try {
-        const yamlSnapshotResult = await browser.scripting.executeScript({
-          target: { tabId },
-          func: () => {
-            try {
-              // @ts-ignore
-              if (window.__snapshotYaml__) {
-                // @ts-ignore
-                return window.__snapshotYaml__(document.body);
-              }
-              return "# YAML snapshot not available";
-            } catch (error) {
-              return `# Error in __snapshotYaml__: \n\n${error instanceof Error ? error.stack : String(error)}`;
-            }
-          },
+        // Get snapshots via content script message (works with or without automator)
+        const currentAutomatorId = automator?.id || "none"; // Use "none" for pages without automator
+
+        // Clear previous snapshots
+        latestAriaSnapshot = "";
+        latestYamlSnapshot = "";
+
+        // Request snapshots from content script
+        await browser.tabs.sendMessage(tabId, {
+          type: "devtools:get-snapshots",
+          automatorId: currentAutomatorId,
         });
-        yamlSnapshot =
-          yamlSnapshotResult[0]?.result || "# Error getting YAML snapshot";
+
+        // Wait for snapshot results to be stored in state variables
+        const startTime = Date.now();
+        const timeout = 5000;
+
+        while (
+          (!latestAriaSnapshot || !latestYamlSnapshot) &&
+          Date.now() - startTime < timeout
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+
+        if (!latestAriaSnapshot || !latestYamlSnapshot) {
+          throw new Error("Snapshot request timed out");
+        }
+
+        ariaSnapshot = latestAriaSnapshot;
+        yamlSnapshot = latestYamlSnapshot;
       } catch (error) {
-        console.error("Failed to execute YAML snapshot script:", error);
-        yamlSnapshot = `# Script execution failed: \n\n${error instanceof Error ? error.stack : String(error)}`;
+        console.error("Failed to get snapshots:", error);
+        ariaSnapshot = `# Error getting ARIA snapshot: ${error instanceof Error ? error.message : String(error)}`;
+        yamlSnapshot = `# Error getting YAML snapshot: ${error instanceof Error ? error.message : String(error)}`;
       }
 
       // Get page screenshot
@@ -349,8 +364,8 @@
         url,
         title,
         timestamp: new Date().toISOString(),
-        platform: automator.id,
-        specId: automator.id,
+        platform: automator?.id || "unknown",
+        specId: automator?.id || "unknown",
         userAgent: navigator.userAgent,
         notes,
         testSummary,
@@ -378,7 +393,18 @@
 
       // Generate and download
       const blob = await zip.generateAsync({ type: "blob" });
-      const filename = `snapshot-v4-${automator.id}-${Date.now()}.zip`;
+      // Extract domain name from URL for filename
+      const domainName =
+        automator?.id ||
+        (() => {
+          try {
+            const urlObj = new URL(url);
+            return urlObj.hostname.replace(/^www\./, "");
+          } catch {
+            return "page";
+          }
+        })();
+      const filename = `${domainName}_${Date.now()}.zip`;
       const downloadUrl = URL.createObjectURL(blob);
 
       const a = document.createElement("a");
@@ -403,7 +429,7 @@
       <button onclick={refreshAll} disabled={isRefreshing || !automator}>
         {isRefreshing ? "Refreshing..." : "Refresh All"}
       </button>
-      <button onclick={downloadSnapshot} disabled={isDownloading || !automator}>
+      <button onclick={downloadSnapshot} disabled={isDownloading}>
         {isDownloading ? "Downloading..." : "Download Snapshot"}
       </button>
     </div>
