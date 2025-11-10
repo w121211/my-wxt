@@ -1,7 +1,21 @@
 // lib/types/automators-v2.ts
 // V2 API surface for assistant automators (types only)
 
-import type { SelectorMap } from "../services/automators/types";
+export type CssSelector = string | string[];
+
+export interface SelectorSpec {
+  /** CSS selector(s) to find the element */
+  selector?: CssSelector;
+  /** Attribute to extract (default: textContent) */
+  attr?: string;
+  /** Nested fields for structured data */
+  fields?: Record<string, SelectorSpec>;
+}
+w;
+
+export interface SelectorMap {
+  readonly [key: string]: CssSelector | SelectorSpec;
+}
 
 export type AiAssistantId = "chatgpt" | "claude" | "gemini" | "grok";
 

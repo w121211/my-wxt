@@ -77,6 +77,12 @@ const selectors: SelectorMap = {
   chatContainer: ["main", 'div[data-testid="drop-container"]'],
 
   messageInput: [
+    '[data-placeholder="How can Grok help?"][contenteditable]',
+    'form [role="textbox"][data-placeholder="How can Grok help?"]',
+    'form [role="textbox"]',
+    '[role="textbox"][contenteditable="true"]',
+    '[role="textbox"][contenteditable]',
+    '[data-placeholder][contenteditable]',
     'textarea[aria-label="Ask Grok anything"]',
     'div[contenteditable="true"][role="textbox"]',
     'div[contenteditable="true"]',
@@ -84,8 +90,8 @@ const selectors: SelectorMap = {
     'p[data-placeholder="What do you want to know?"]',
   ],
 
-  // No reliable snapshot of the enabled send button yet (logged-out page shows a disabled submit).
-  // Keep this empty so submitPrompt can surface a clear TODO until we capture the control while authenticated.
+  // Grok's authenticated composer sends on Enter; no reliable send button is rendered.
+  // Leave submit selectors empty so submitPrompt falls back to a synthetic Enter keypress.
   submitButton: [],
 
   attachButton: ['button[aria-label="Attach"]', 'button[aria-label*="attach"]'],
@@ -434,21 +440,24 @@ export class GrokAutomatorV2 implements AiAssistantAutomatorV2 {
       // Wait a moment for the UI to update
       await new Promise((resolve) => setTimeout(resolve, 300));
 
-      // Find and click submit button
+      // Find a submit control or synthesize the Enter key Grok expects
       const submitButton = querySelector(selectors.submitButton);
-      if (!submitButton) {
-        throw new Error(
-          "Submit button not found - need snapshot with authenticated send control"
-        );
-      }
 
       // Check if aborted before submitting
       if (signal?.aborted) {
         throw new Error("Submission aborted");
       }
 
-      // Click the submit button
-      (submitButton as HTMLButtonElement).click();
+      if (submitButton) {
+        (submitButton as HTMLButtonElement).click();
+      } else {
+        const submitted = this.triggerSubmitWithEnter(inputElement);
+        if (!submitted) {
+          throw new Error(
+            "Unable to submit prompt - need authenticated snapshot of a send action"
+          );
+        }
+      }
 
       // Wait for the message to be sent and get the message ID
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -561,6 +570,41 @@ export class GrokAutomatorV2 implements AiAssistantAutomatorV2 {
     }
 
     return entries;
+  }
+
+  private triggerSubmitWithEnter(inputElement: Element): boolean {
+    const interactiveElement =
+      inputElement instanceof HTMLElement
+        ? inputElement
+        : (inputElement.querySelector(
+            '[contenteditable], textarea, input'
+          ) as HTMLElement | null);
+
+    if (!interactiveElement) {
+      return false;
+    }
+
+    interactiveElement.focus();
+
+    this.dispatchEnterKeyEvent(interactiveElement, "keydown");
+    this.dispatchEnterKeyEvent(interactiveElement, "keypress");
+    this.dispatchEnterKeyEvent(interactiveElement, "keyup");
+
+    return true;
+  }
+
+  private dispatchEnterKeyEvent(
+    target: HTMLElement,
+    type: "keydown" | "keypress" | "keyup"
+  ): void {
+    const event = new KeyboardEvent(type, {
+      key: "Enter",
+      code: "Enter",
+      bubbles: true,
+      cancelable: true,
+    });
+
+    target.dispatchEvent(event);
   }
 
   private hasThoughtIndicator(): boolean {
