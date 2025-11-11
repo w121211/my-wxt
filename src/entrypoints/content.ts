@@ -6,13 +6,21 @@ import { resolveCssSelector } from "../lib/utils/selectors";
 import type {
   AiAssistantAutomatorV2,
   AiAssistantId,
+  ChatError,
+  SubmitPromptInput,
 } from "../lib/types/automators-v2";
 import type {
   DevToolsTestMessage,
   DevToolsCommand,
   FunctionResult,
   SelectorTestResult,
+  TestSummary,
 } from "../lib/types/devtools-messages";
+import type {
+  BackgroundToContentCommand,
+  ContentToBackgroundNotification,
+} from "../lib/types/runtime";
+import type { SnapshotBundle } from "../lib/types/websocket";
 
 export default defineContentScript({
   matches: [
@@ -86,9 +94,24 @@ export default defineContentScript({
 
     console.log("[content] Automator found:", automator.id);
     const assistantId = automator.id;
+    const connectedAutomator: AiAssistantAutomatorV2 = automator;
+
+    const forwardToBridge: BridgeNotifier = (message) => {
+      const payload: ContentToBackgroundNotification = {
+        ...message,
+        assistantId,
+      };
+      browser.runtime.sendMessage(payload).catch((error) => {
+        console.error("[content-v4] Failed to send bridge notification:", error);
+      });
+    };
 
     // Initialize test runner
-    const testRunner = new AutomatorTestRunner(automator, assistantId);
+    const testRunner = new AutomatorTestRunner(
+      connectedAutomator,
+      assistantId,
+      forwardToBridge
+    );
 
     // Listen for commands from DevTools panel
     browser.runtime.onMessage.addListener(
@@ -151,9 +174,100 @@ export default defineContentScript({
       }
     );
 
+    // Listen for commands from the background script
+    browser.runtime.onMessage.addListener((message: any) => {
+      if (!isBackgroundCommand(message)) {
+        return;
+      }
+      const command = message as BackgroundToContentCommand;
+      if (command.assistantId !== assistantId) {
+        return;
+      }
+      handleBackgroundCommand(command);
+    });
+
     // Auto-run tests on initialization
     console.log("[content-v4] Starting automatic test suite...");
-    await testRunner.runFullTestSuite();
+    try {
+      await testRunner.runFullTestSuite();
+    } catch (error) {
+      console.error("[content-v4] Automatic test suite failed:", error);
+    } finally {
+      testRunner.startPageWatcher();
+    }
+
+    async function submitPromptForBridge(
+      requestId: string,
+      input: SubmitPromptInput
+    ) {
+      try {
+        const result = await connectedAutomator.submitPrompt(input);
+        forwardToBridge({
+          type: "ws:submit-prompt-result",
+          requestId,
+          payload: result,
+        });
+      } catch (error) {
+        forwardToBridge({
+          type: "ws:error",
+          requestId,
+          payload: toChatError("prompt-failed", error),
+        });
+      }
+    }
+
+    async function runTestsForBridge(requestId: string) {
+      const events: DevToolsTestMessage[] = [];
+      const stopRecording = testRunner.onEvent((event) => {
+        events.push(event);
+      });
+
+      try {
+        const summary = await testRunner.runFullTestSuite();
+        const snapshots = await testRunner.getSnapshots();
+        forwardToBridge({
+          type: "ws:run-tests-result",
+          requestId,
+          payload: {
+            summary,
+            events,
+            snapshots,
+          },
+        });
+      } catch (error) {
+        forwardToBridge({
+          type: "ws:error",
+          requestId,
+          payload: toChatError("unexpected", error),
+        });
+      } finally {
+        stopRecording();
+      }
+    }
+
+    function handleBackgroundCommand(command: BackgroundToContentCommand): void {
+      switch (command.type) {
+        case "assistant:watch-page":
+          testRunner.startServerWatch(
+            command.payload.watchId,
+            command.payload.chatId,
+            command.payload.requestId
+          );
+          break;
+        case "assistant:watch-page-stop":
+          testRunner.stopServerWatch(command.payload.watchId);
+          break;
+        case "assistant:submit-prompt":
+          void submitPromptForBridge(
+            command.payload.requestId,
+            command.payload.input
+          );
+          break;
+        case "assistant:run-tests":
+          void runTestsForBridge(command.payload.requestId);
+          break;
+      }
+    }
   },
 });
 
@@ -161,27 +275,59 @@ export default defineContentScript({
  * AutomatorTestRunner - Runs tests and streams results to DevTools
  * Rewritten to match V2 interface: getLandingPage, getChatPage, submitPrompt, watchPage
  */
+type WithoutAssistantId<T> = T extends any ? Omit<T, "assistantId"> : never;
+
+type BridgeNotifier = (
+  message: WithoutAssistantId<ContentToBackgroundNotification>
+) => void;
+
+type WatchSource = "auto" | "server";
+
 class AutomatorTestRunner {
   private pageWatcherUnsubscribe?: () => void;
+  private activeWatchSource: WatchSource | null = null;
+  private activeWatchId?: string;
+  private autoWatchEnabled = false;
+  private autoWatchChatId?: string;
+  private readonly eventListeners = new Set<(message: DevToolsTestMessage) => void>();
 
   constructor(
     private automator: AiAssistantAutomatorV2,
-    private assistantId: AiAssistantId
+    private assistantId: AiAssistantId,
+    private notifyBridge: BridgeNotifier
   ) {}
 
   /**
    * Send a test message to DevTools panel
    */
   private sendMessage(message: DevToolsTestMessage): void {
+    this.emitEvent(message);
     browser.runtime.sendMessage(message).catch((error) => {
       console.error("[content-v4] Failed to send message:", error);
     });
   }
 
+  onEvent(listener: (message: DevToolsTestMessage) => void): () => void {
+    this.eventListeners.add(listener);
+    return () => {
+      this.eventListeners.delete(listener);
+    };
+  }
+
+  private emitEvent(message: DevToolsTestMessage): void {
+    for (const listener of this.eventListeners) {
+      try {
+        listener(message);
+      } catch (error) {
+        console.error("[content-v4] Test event listener failed:", error);
+      }
+    }
+  }
+
   /**
    * Run the complete test suite for V2 interface
    */
-  async runFullTestSuite(): Promise<void> {
+  async runFullTestSuite(): Promise<TestSummary> {
     const startTime = Date.now();
 
     this.sendMessage({
@@ -223,6 +369,13 @@ class AutomatorTestRunner {
         }
       }
 
+      const summary: TestSummary = {
+        total,
+        passed,
+        failed,
+        duration: Date.now() - startTime,
+      };
+
       this.sendMessage({
         type: "automator:status",
         automatorId: this.assistantId,
@@ -235,16 +388,10 @@ class AutomatorTestRunner {
         type: "test:suite:complete",
         automatorId: this.assistantId,
         timestamp: new Date().toISOString(),
-        summary: {
-          total,
-          passed,
-          failed,
-          duration: Date.now() - startTime,
-        },
+        summary,
       });
 
-      // Auto-start page watcher after tests complete
-      this.startPageWatcher();
+      return summary;
     } catch (error: any) {
       this.sendMessage({
         type: "automator:status",
@@ -253,6 +400,9 @@ class AutomatorTestRunner {
         message: `Test suite failed: ${error.message}`,
         timestamp: new Date().toISOString(),
       });
+      throw error;
+    } finally {
+      this.resumeAutoWatchIfNeeded();
     }
   }
 
@@ -390,22 +540,30 @@ class AutomatorTestRunner {
   /**
    * Get ARIA and YAML snapshots of the page
    */
-  async getSnapshots(): Promise<void> {
+  async getSnapshots(): Promise<SnapshotBundle> {
     console.log("[content-v4] Generating snapshots...");
+
+    const generatedAt = new Date().toISOString();
 
     try {
       const ariaSnapshot = snapshotAria(document.body);
       const yamlSnapshot = snapshotYaml(document.body);
+      const payload: SnapshotBundle = {
+        aria: ariaSnapshot,
+        yaml: yamlSnapshot,
+        generatedAt,
+      };
 
       this.sendMessage({
         type: "snapshots:results",
         automatorId: this.assistantId,
         ariaSnapshot,
         yamlSnapshot,
-        timestamp: new Date().toISOString(),
+        timestamp: generatedAt,
       });
 
       console.log("[content-v4] Snapshots sent successfully");
+      return payload;
     } catch (error: any) {
       console.error("[content-v4] Failed to generate snapshots:", error);
 
@@ -414,8 +572,9 @@ class AutomatorTestRunner {
         automatorId: this.assistantId,
         ariaSnapshot: `# Error generating ARIA snapshot: ${error.message}`,
         yamlSnapshot: `# Error generating YAML snapshot: ${error.message}`,
-        timestamp: new Date().toISOString(),
+        timestamp: generatedAt,
       });
+      throw error;
     }
   }
 
@@ -423,12 +582,69 @@ class AutomatorTestRunner {
    * Start the page watcher to continuously monitor page changes
    */
   startPageWatcher(chatId?: string): void {
-    // Stop existing watcher if any
+    this.autoWatchEnabled = true;
+    if (chatId !== undefined) {
+      this.autoWatchChatId = chatId;
+    }
+    if (this.activeWatchSource === "server") {
+      return;
+    }
+    this.startWatchInternal({ source: "auto", chatId: this.autoWatchChatId });
+  }
+
+  startServerWatch(
+    watchId: string,
+    chatId?: string,
+    requestId?: string
+  ): void {
+    this.autoWatchEnabled = true;
+    this.startWatchInternal({ source: "server", watchId, chatId, requestId });
+  }
+
+  stopServerWatch(watchId: string): void {
+    if (this.activeWatchSource === "server" && this.activeWatchId === watchId) {
+      this.stopCurrentWatcher();
+      this.resumeAutoWatchIfNeeded();
+    }
+  }
+
+  /**
+   * Stop the page watcher
+   */
+  stopPageWatcher(): void {
+    this.autoWatchEnabled = false;
+    this.stopCurrentWatcher();
+  }
+
+  private resumeAutoWatchIfNeeded(): void {
+    if (!this.autoWatchEnabled) {
+      return;
+    }
+    if (this.activeWatchSource === "server") {
+      return;
+    }
+    this.startWatchInternal({ source: "auto", chatId: this.autoWatchChatId });
+  }
+
+  private stopCurrentWatcher(): void {
     if (this.pageWatcherUnsubscribe) {
       this.pageWatcherUnsubscribe();
+      this.pageWatcherUnsubscribe = undefined;
+      console.log("[content-v4] Page watcher stopped");
     }
+    this.activeWatchSource = null;
+    this.activeWatchId = undefined;
+  }
 
-    console.log("[content-v4] Starting page watcher...");
+  private startWatchInternal(options: {
+    readonly source: WatchSource;
+    readonly watchId?: string;
+    readonly chatId?: string;
+    readonly requestId?: string;
+  }): void {
+    this.stopCurrentWatcher();
+
+    console.log(`[content-v4] Starting ${options.source} page watcher...`);
 
     this.sendMessage({
       type: "automator:status",
@@ -438,31 +654,42 @@ class AutomatorTestRunner {
       timestamp: new Date().toISOString(),
     });
 
-    // Start watching page changes
-    this.pageWatcherUnsubscribe = this.automator.watchPage(
-      { chatId },
-      (event) => {
-        console.log("[content-v4] Page event:", event);
+    try {
+      this.pageWatcherUnsubscribe = this.automator.watchPage(
+        { chatId: options.chatId },
+        (event) => {
+          console.log("[content-v4] Page event:", event);
 
-        this.sendMessage({
-          type: "watcher:update",
-          automatorId: this.assistantId,
-          watcherName: "watchPage",
-          data: event,
-          timestamp: new Date().toISOString(),
-        });
+          this.sendMessage({
+            type: "watcher:update",
+            automatorId: this.assistantId,
+            watcherName: "watchPage",
+            data: event,
+            timestamp: new Date().toISOString(),
+          });
+
+          this.notifyBridge({
+            type: "ws:watch-page-update",
+            watchId: options.watchId,
+            payload: event,
+          });
+        }
+      );
+      this.activeWatchSource = options.source;
+      this.activeWatchId = options.watchId;
+    } catch (error: any) {
+      console.error("[content-v4] Failed to start watcher:", error);
+      this.notifyBridge({
+        type: "ws:error",
+        watchId: options.watchId,
+        requestId: options.requestId,
+        payload: toChatError("unexpected", error),
+      });
+      this.activeWatchSource = null;
+      this.activeWatchId = undefined;
+      if (options.source === "server") {
+        this.resumeAutoWatchIfNeeded();
       }
-    );
-  }
-
-  /**
-   * Stop the page watcher
-   */
-  stopPageWatcher(): void {
-    if (this.pageWatcherUnsubscribe) {
-      this.pageWatcherUnsubscribe();
-      this.pageWatcherUnsubscribe = undefined;
-      console.log("[content-v4] Page watcher stopped");
     }
   }
 
@@ -484,3 +711,43 @@ class AutomatorTestRunner {
     return "action";
   }
 }
+
+const backgroundCommandTypes = new Set<BackgroundToContentCommand["type"]>([
+  "assistant:watch-page",
+  "assistant:watch-page-stop",
+  "assistant:submit-prompt",
+  "assistant:run-tests",
+]);
+
+const isBackgroundCommand = (
+  message: unknown
+): message is BackgroundToContentCommand => {
+  if (
+    !message ||
+    typeof message !== "object" ||
+    !("type" in message) ||
+    typeof (message as any).type !== "string"
+  ) {
+    return false;
+  }
+  return backgroundCommandTypes.has(
+    (message as BackgroundToContentCommand).type
+  );
+};
+
+const toChatError = (
+  code: ChatError["code"],
+  error: unknown
+): ChatError => {
+  if (error instanceof Error) {
+    return {
+      code,
+      message: error.message,
+      details: error.stack ? { stack: error.stack } : undefined,
+    };
+  }
+  return {
+    code,
+    message: String(error),
+  };
+};

@@ -4,9 +4,13 @@ import { browser } from "wxt/browser";
 import { getAutomatorById } from "../automators/registry.js";
 import type {
   AiAssistantId,
+  ChatError,
   SubmitPromptInput,
 } from "../../types/automators-v2.js";
-import type { ServerMessage, ExtensionMessage } from "../../types/websocket.js";
+import type {
+  ServerMessage,
+  ExtensionMessage,
+} from "../../types/websocket.js";
 import type { BackgroundToContentCommand } from "../../types/runtime.js";
 import type { WebsocketClient } from "./client.js";
 
@@ -39,41 +43,41 @@ export class WebsocketRouter {
       case "connection:close":
         this.client.disconnect();
         break;
-      case "chat:request-list":
-        this.dispatchToContent(message.assistant, {
-          type: "assistant:get-chat-list",
-          assistantId: message.assistant,
-        });
+      case "ws:watch-page":
+        this.handleWatchPageStart(message);
         break;
-      case "chat:request-page":
-        this.dispatchToContent(message.assistant, {
-          type: "assistant:get-chat-page",
-          assistantId: message.assistant,
-          payload: message.target,
-        });
+      case "ws:watch-page-stop":
+        this.handleWatchPageStop(message.assistant, message.watchId);
         break;
-      case "chat:submit-prompt":
-        this.handleSubmitPrompt(message.assistant, message.input);
+      case "ws:submit-prompt":
+        this.handleSubmitPrompt(
+          message.assistant,
+          message.requestId,
+          message.input
+        );
+        break;
+      case "ws:run-tests":
+        this.handleRunTests(message.assistant, message.requestId);
         break;
     }
   };
 
   private async handleSubmitPrompt(
     assistant: AiAssistantId,
+    requestId: string,
     input: SubmitPromptInput
   ) {
-    // Get automator and determine the target URL for the action
     const automator = getAutomatorById(assistant);
     if (!automator) {
-      this.send({
-        type: "chat:error",
-        assistantId: assistant,
-        payload: {
+      this.sendBridgeError(
+        assistant,
+        {
           code: "navigation-failed",
           message: "Automator not found for assistant",
           details: { assistant },
         },
-      });
+        { requestId }
+      );
       return;
     }
 
@@ -81,25 +85,103 @@ export class WebsocketRouter {
       chatId: input.chatId,
     });
 
-    const tabId = await this.ensureAssistantTab(assistant, targetUrl);
-    if (tabId === null) {
-      this.send({
-        type: "chat:error",
+    await this.dispatchToContent(
+      assistant,
+      {
+        type: "assistant:submit-prompt",
         assistantId: assistant,
-        payload: {
+        payload: { requestId, input },
+      },
+      targetUrl,
+      { requestId, errorCode: "prompt-failed" }
+    );
+  }
+
+  private async handleWatchPageStart(
+    message: Extract<ServerMessage, { type: "ws:watch-page" }>
+  ) {
+    const automator = getAutomatorById(message.assistant);
+    if (!automator) {
+      this.sendBridgeError(
+        message.assistant,
+        {
           code: "navigation-failed",
-          message: "Unable to locate or create assistant tab",
-          details: { assistant },
+          message: "Automator not found for assistant",
+          details: { assistant: message.assistant },
         },
-      });
+        { requestId: message.requestId, watchId: message.watchId }
+      );
       return;
     }
 
-    await this.dispatchToContent(assistant, {
-      type: "assistant:submit-prompt",
-      assistantId: assistant,
-      payload: input,
+    const action = message.chatId ? "getChatPage" : "getLandingPage";
+    const targetUrl = automator.getUrlForAction(action, {
+      chatId: message.chatId,
     });
+
+    await this.dispatchToContent(
+      message.assistant,
+      {
+        type: "assistant:watch-page",
+        assistantId: message.assistant,
+        payload: {
+          requestId: message.requestId,
+          watchId: message.watchId,
+          chatId: message.chatId,
+          intervalMs: message.intervalMs,
+        },
+      },
+      targetUrl,
+      { requestId: message.requestId, watchId: message.watchId }
+    );
+  }
+
+  private async handleWatchPageStop(
+    assistant: AiAssistantId,
+    watchId: string
+  ) {
+    await this.dispatchToContent(
+      assistant,
+      {
+        type: "assistant:watch-page-stop",
+        assistantId: assistant,
+        payload: { watchId },
+      },
+      undefined,
+      { watchId }
+    );
+  }
+
+  private async handleRunTests(
+    assistant: AiAssistantId,
+    requestId: string
+  ) {
+    const automator = getAutomatorById(assistant);
+    if (!automator) {
+      this.sendBridgeError(
+        assistant,
+        {
+          code: "navigation-failed",
+          message: "Automator not found for assistant",
+          details: { assistant },
+        },
+        { requestId }
+      );
+      return;
+    }
+
+    const targetUrl = automator.getUrlForAction("getLandingPage");
+
+    await this.dispatchToContent(
+      assistant,
+      {
+        type: "assistant:run-tests",
+        assistantId: assistant,
+        payload: { requestId },
+      },
+      targetUrl,
+      { requestId }
+    );
   }
 
   private async ensureAssistantTab(
@@ -162,18 +244,24 @@ export class WebsocketRouter {
 
   private async dispatchToContent(
     assistant: AiAssistantId,
-    command: BackgroundToContentCommand
+    command: BackgroundToContentCommand,
+    preferredUrl?: string,
+    context?: {
+      readonly requestId?: string;
+      readonly watchId?: string;
+      readonly errorCode?: ChatError["code"];
+    }
   ) {
-    const tabId = await this.ensureAssistantTab(assistant);
+    const tabId = await this.ensureAssistantTab(assistant, preferredUrl);
     if (tabId === null) {
-      this.send({
-        type: "chat:error",
-        assistantId: assistant,
-        payload: {
+      this.sendBridgeError(
+        assistant,
+        {
           code: "navigation-failed",
           message: "Unable to resolve assistant tab",
         },
-      });
+        context
+      );
       return;
     }
 
@@ -181,19 +269,33 @@ export class WebsocketRouter {
       await browser.tabs.sendMessage(tabId, command);
     } catch (error) {
       console.error("Failed to dispatch message to content script", error);
-      this.send({
-        type: "chat:error",
-        assistantId: assistant,
-        payload: {
-          code: "prompt-failed",
+      this.sendBridgeError(
+        assistant,
+        {
+          code: context?.errorCode ?? "unexpected",
           message: "Content script communication failed",
           details: { error: `${error}` },
         },
-      });
+        context
+      );
     }
   }
 
   private send(message: ExtensionMessage): void {
     this.client.send(message);
+  }
+
+  private sendBridgeError(
+    assistant: AiAssistantId,
+    payload: ChatError,
+    context?: { readonly requestId?: string; readonly watchId?: string }
+  ): void {
+    this.send({
+      type: "ws:error",
+      assistantId: assistant,
+      requestId: context?.requestId,
+      watchId: context?.watchId,
+      payload,
+    });
   }
 }

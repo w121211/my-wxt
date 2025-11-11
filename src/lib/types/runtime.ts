@@ -4,15 +4,12 @@
 
 import type {
   AiAssistantId,
-  ChatTarget,
-  ChatEntry,
-  ChatPage,
   ChatError,
-  LoginState,
+  PageEvent,
   SubmitPromptInput,
   SubmitPromptResult,
-  ConversationStatus,
 } from "./automators-v2";
+import type { RunTestsResultPayload } from "./websocket";
 
 // ============================================================================
 // Background → Content Script Commands
@@ -23,18 +20,32 @@ import type {
  */
 export type BackgroundToContentCommand =
   | {
-      readonly type: "assistant:get-chat-list";
+      readonly type: "assistant:watch-page";
       readonly assistantId: AiAssistantId;
+      readonly payload: {
+        readonly requestId: string;
+        readonly watchId: string;
+        readonly chatId?: string;
+        readonly intervalMs?: number;
+      };
     }
   | {
-      readonly type: "assistant:get-chat-page";
+      readonly type: "assistant:watch-page-stop";
       readonly assistantId: AiAssistantId;
-      readonly payload: ChatTarget;
+      readonly payload: { readonly watchId: string };
     }
   | {
       readonly type: "assistant:submit-prompt";
       readonly assistantId: AiAssistantId;
-      readonly payload: SubmitPromptInput;
+      readonly payload: {
+        readonly requestId: string;
+        readonly input: SubmitPromptInput;
+      };
+    }
+  | {
+      readonly type: "assistant:run-tests";
+      readonly assistantId: AiAssistantId;
+      readonly payload: { readonly requestId: string };
     };
 
 // ============================================================================
@@ -46,33 +57,28 @@ export type BackgroundToContentCommand =
  */
 export type ContentToBackgroundNotification =
   | {
-      readonly type: "assistant:login-state";
+      readonly type: "ws:watch-page-update";
       readonly assistantId: AiAssistantId;
-      readonly payload: LoginState;
+      readonly watchId?: string;
+      readonly payload: PageEvent;
     }
   | {
-      readonly type: "chat:list";
+      readonly type: "ws:submit-prompt-result";
       readonly assistantId: AiAssistantId;
-      readonly payload: readonly ChatEntry[];
-    }
-  | {
-      readonly type: "chat:page";
-      readonly assistantId: AiAssistantId;
-      readonly payload: ChatPage;
-    }
-  | {
-      readonly type: "prompt:submitted";
-      readonly assistantId: AiAssistantId;
+      readonly requestId: string;
       readonly payload: SubmitPromptResult;
     }
   | {
-      readonly type: "conversation:status";
+      readonly type: "ws:run-tests-result";
       readonly assistantId: AiAssistantId;
-      readonly payload: ConversationStatus;
+      readonly requestId: string;
+      readonly payload: RunTestsResultPayload;
     }
   | {
-      readonly type: "chat:error";
+      readonly type: "ws:error";
       readonly assistantId: AiAssistantId;
+      readonly requestId?: string;
+      readonly watchId?: string;
       readonly payload: ChatError;
     };
 

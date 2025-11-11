@@ -3,15 +3,12 @@
 
 import type {
   AiAssistantId,
-  ChatTarget,
-  ChatEntry,
-  ChatPage,
   ChatError,
-  LoginState,
+  PageEvent,
   SubmitPromptInput,
   SubmitPromptResult,
-  ConversationStatus,
 } from "./automators-v2";
+import type { DevToolsTestMessage, TestSummary } from "./devtools-messages";
 
 /**
  * Messages sent FROM the local server TO the extension
@@ -27,18 +24,28 @@ export type ServerMessage =
       readonly type: "connection:close";
     }
   | {
-      readonly type: "chat:request-list";
+      readonly type: "ws:watch-page";
       readonly assistant: AiAssistantId;
+      readonly requestId: string;
+      readonly watchId: string;
+      readonly chatId?: string;
+      readonly intervalMs?: number;
     }
   | {
-      readonly type: "chat:request-page";
+      readonly type: "ws:watch-page-stop";
       readonly assistant: AiAssistantId;
-      readonly target: ChatTarget;
+      readonly watchId: string;
     }
   | {
-      readonly type: "chat:submit-prompt";
+      readonly type: "ws:submit-prompt";
       readonly assistant: AiAssistantId;
+      readonly requestId: string;
       readonly input: SubmitPromptInput;
+    }
+  | {
+      readonly type: "ws:run-tests";
+      readonly assistant: AiAssistantId;
+      readonly requestId: string;
     };
 
 /**
@@ -54,35 +61,42 @@ export type ExtensionMessage =
       readonly payload: ConnectionError;
     }
   | {
-      readonly type: "assistant:login-state";
+      readonly type: "ws:watch-page-update";
       readonly assistantId: AiAssistantId;
-      readonly payload: LoginState;
+      readonly watchId?: string;
+      readonly payload: PageEvent;
     }
   | {
-      readonly type: "chat:list";
+      readonly type: "ws:submit-prompt-result";
       readonly assistantId: AiAssistantId;
-      readonly payload: readonly ChatEntry[];
-    }
-  | {
-      readonly type: "chat:page";
-      readonly assistantId: AiAssistantId;
-      readonly payload: ChatPage;
-    }
-  | {
-      readonly type: "prompt:submitted";
-      readonly assistantId: AiAssistantId;
+      readonly requestId: string;
       readonly payload: SubmitPromptResult;
     }
   | {
-      readonly type: "conversation:status";
+      readonly type: "ws:run-tests-result";
       readonly assistantId: AiAssistantId;
-      readonly payload: ConversationStatus;
+      readonly requestId: string;
+      readonly payload: RunTestsResultPayload;
     }
   | {
-      readonly type: "chat:error";
+      readonly type: "ws:error";
       readonly assistantId: AiAssistantId;
+      readonly requestId?: string;
+      readonly watchId?: string;
       readonly payload: ChatError;
     };
+
+export interface RunTestsResultPayload {
+  readonly summary: TestSummary;
+  readonly events: readonly DevToolsTestMessage[];
+  readonly snapshots?: SnapshotBundle;
+}
+
+export interface SnapshotBundle {
+  readonly aria: string;
+  readonly yaml: string;
+  readonly generatedAt: string;
+}
 
 export interface ConnectionStatus {
   readonly status: "connecting" | "open" | "closed" | "error";

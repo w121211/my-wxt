@@ -43,12 +43,10 @@ export default defineBackground(() => {
 const contentNotificationTypes = new Set<
   ContentToBackgroundNotification["type"]
 >([
-  "assistant:login-state",
-  "chat:list",
-  "chat:page",
-  "prompt:submitted",
-  "conversation:status",
-  "chat:error",
+  "ws:watch-page-update",
+  "ws:submit-prompt-result",
+  "ws:run-tests-result",
+  "ws:error",
 ]);
 
 const isContentScriptNotification = (
