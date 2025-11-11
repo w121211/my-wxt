@@ -5,18 +5,22 @@
 import type { CssSelector, SelectorSpec } from "../services/automators/types";
 
 /**
- * Resolve a selector value to a CSS selector string or array
- * Extracts the selector from SelectorSpec objects or returns CssSelector as-is
+ * Resolve a selector value to an array of CSS selector strings
+ * Extracts the selector from SelectorSpec objects or returns CssSelector as array
  */
 export function resolveCssSelector(
   value: CssSelector | SelectorSpec | undefined
-): string | string[] {
+): string[] {
   if (!value) return [];
-  if (typeof value === "string" || Array.isArray(value)) {
+  if (typeof value === "string") {
+    return [value];
+  }
+  if (Array.isArray(value)) {
     return value;
   }
   // It's a SelectorSpec - extract the selector property
-  return value.selector || [];
+  const selector = value.selector || [];
+  return typeof selector === "string" ? [selector] : selector;
 }
 
 /**

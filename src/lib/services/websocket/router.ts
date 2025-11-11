@@ -1,18 +1,14 @@
 // lib/services/websocket/router.ts
 
 import { browser } from "wxt/browser";
+import { getAutomatorById } from "../automators/registry.js";
 import type {
   AiAssistantId,
   SubmitPromptInput,
-  ChatTarget,
-} from "../../types/automators-v2";
-import type { ServerMessage, ExtensionMessage } from "../../types/websocket";
-import type { BackgroundToContentCommand } from "../../types/runtime";
-import type { WebsocketClient } from "./client";
-import { ChatgptAutomator } from "../automators/chatgpt-automator";
-import { ClaudeAutomator } from "../automators/claude-extractor";
-import { GeminiAutomator } from "../automators/gemini-extractor";
-import { GrokAutomator } from "../automators/grok-automator";
+} from "../../types/automators-v2.js";
+import type { ServerMessage, ExtensionMessage } from "../../types/websocket.js";
+import type { BackgroundToContentCommand } from "../../types/runtime.js";
+import type { WebsocketClient } from "./client.js";
 
 type AssistantTab = {
   readonly assistant: AiAssistantId;
@@ -66,10 +62,26 @@ export class WebsocketRouter {
     assistant: AiAssistantId,
     input: SubmitPromptInput
   ) {
-    const tabId = await this.ensureAssistantTab(
-      assistant,
-      input.target?.url
-    );
+    // Get automator and determine the target URL for the action
+    const automator = getAutomatorById(assistant);
+    if (!automator) {
+      this.send({
+        type: "chat:error",
+        assistantId: assistant,
+        payload: {
+          code: "navigation-failed",
+          message: "Automator not found for assistant",
+          details: { assistant },
+        },
+      });
+      return;
+    }
+
+    const targetUrl = automator.getUrlForAction("submitPrompt", {
+      chatId: input.chatId,
+    });
+
+    const tabId = await this.ensureAssistantTab(assistant, targetUrl);
     if (tabId === null) {
       this.send({
         type: "chat:error",
@@ -114,13 +126,13 @@ export class WebsocketRouter {
     }
 
     // Get automator configuration
-    const AutomatorClass = this.getAutomatorClass(assistant);
-    if (!AutomatorClass) {
+    const automator = getAutomatorById(assistant);
+    if (!automator) {
       return null;
     }
 
     const matchingTabs = await browser.tabs.query({
-      url: AutomatorClass.urlGlobs as unknown as string[],
+      url: automator.urlGlobs as unknown as string[],
     });
 
     const tab =
@@ -138,7 +150,7 @@ export class WebsocketRouter {
     }
 
     const created = await browser.tabs.create({
-      url: preferredUrl ?? AutomatorClass.url,
+      url: preferredUrl ?? automator.url,
       active: false,
     });
     if (!created.id) {
@@ -183,20 +195,5 @@ export class WebsocketRouter {
 
   private send(message: ExtensionMessage): void {
     this.client.send(message);
-  }
-
-  private getAutomatorClass(assistant: AiAssistantId) {
-    switch (assistant) {
-      case "chatgpt":
-        return ChatgptAutomator;
-      case "claude":
-        return ClaudeAutomator;
-      case "gemini":
-        return GeminiAutomator;
-      case "grok":
-        return GrokAutomator;
-      default:
-        return null;
-    }
   }
 }

@@ -137,6 +137,27 @@ export class GrokAutomatorV2 implements AiAssistantAutomatorV2 {
   readonly selectors = selectors;
 
   // ============================================================================
+  // URL Helpers
+  // ============================================================================
+
+  getUrlForAction(
+    action: "getLandingPage" | "getChatPage" | "submitPrompt",
+    params?: { chatId?: string }
+  ): string {
+    switch (action) {
+      case "getLandingPage":
+        return "https://grok.com/";
+      case "getChatPage":
+      case "submitPrompt":
+        return params?.chatId
+          ? `https://grok.com/c/${params.chatId}`
+          : "https://grok.com/";
+      default:
+        return "https://grok.com/";
+    }
+  }
+
+  // ============================================================================
   // Extractors
   // ============================================================================
 

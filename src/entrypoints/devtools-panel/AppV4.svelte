@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import JSZip from "jszip";
-  import type { AiAssistantAutomatorV2 } from "../../lib/types/automators-v2";
-  import { getAutomatorByUrl } from "../../lib/services/automators/registry";
+  import type { AiAssistantAutomatorV2 } from "../../lib/types/automators-v2.js";
+  import { getAutomatorByUrl } from "../../lib/services/automators/registry.js";
   import type {
     DevToolsTestMessage,
     SelectorResults,
     FunctionResult,
     TestSummary,
-  } from "../../lib/types/devtools-messages";
+  } from "../../lib/types/devtools-messages.js";
 
   let url = $state("");
   let title = $state("");
@@ -267,23 +267,6 @@
     }
   }
 
-  async function goToNewChat() {
-    if (!automator) return;
-
-    try {
-      const tabId = browser.devtools.inspectedWindow.tabId;
-
-      // Navigate to home page for new chat
-      const response = await browser.tabs.sendMessage(tabId, {
-        type: "devtools:navigate-to-chat",
-        automatorId: automator.id,
-      });
-
-      console.log("[AppV4] Go to chat response:", response);
-    } catch (error) {
-      console.error("[AppV4] Failed to navigate:", error);
-    }
-  }
 
   // function copyJSON(data: any) {
   //   navigator.clipboard.writeText(JSON.stringify(data, null, 2));
@@ -550,12 +533,9 @@
           placeholder="Enter a test prompt..."
           rows="3"
         ></textarea>
-        <div style="display: flex; gap: 8px;">
-          <button onclick={goToNewChat}>Go to New Chat</button>
-          <button onclick={testSubmitPrompt} disabled={!testPrompt}
-            >Submit Prompt</button
-          >
-        </div>
+        <button onclick={testSubmitPrompt} disabled={!testPrompt}
+          >Submit Prompt</button
+        >
         {#if actionResults.submitPrompt}
           {@const result = actionResults.submitPrompt}
           <div class="result-block">
@@ -577,7 +557,7 @@
     <section class="card">
       <h2>Watchers ({Object.keys(watcherUpdates).length})</h2>
       {#if Object.keys(watcherUpdates).length === 0}
-        <p>No watcher updates yet. Submit a prompt to start watching.</p>
+        <p>Watcher is running. Updates will appear here when page changes are detected.</p>
       {:else}
         {#each Object.entries(watcherUpdates) as [name, updates]}
           <div class="item">

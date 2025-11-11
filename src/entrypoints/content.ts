@@ -6,13 +6,11 @@ import { resolveCssSelector } from "../lib/utils/selectors";
 import type {
   AiAssistantAutomatorV2,
   AiAssistantId,
-  ConversationRef,
 } from "../lib/types/automators-v2";
 import type {
   DevToolsTestMessage,
   DevToolsCommand,
   FunctionResult,
-  SelectorResults,
   SelectorTestResult,
 } from "../lib/types/devtools-messages";
 
@@ -45,27 +43,37 @@ export default defineContentScript({
               const ariaSnapshot = snapshotAria(document.body);
               const yamlSnapshot = snapshotYaml(document.body);
 
-              browser.runtime.sendMessage({
-                type: "snapshots:results",
-                automatorId: "none",
-                ariaSnapshot,
-                yamlSnapshot,
-                timestamp: new Date().toISOString(),
-              }).catch((error) => {
-                console.error("[content-v4] Failed to send snapshot message:", error);
-              });
+              browser.runtime
+                .sendMessage({
+                  type: "snapshots:results",
+                  automatorId: "none",
+                  ariaSnapshot,
+                  yamlSnapshot,
+                  timestamp: new Date().toISOString(),
+                })
+                .catch((error) => {
+                  console.error(
+                    "[content-v4] Failed to send snapshot message:",
+                    error
+                  );
+                });
 
               sendResponse({ success: true });
             } catch (error: any) {
-              console.error("[content-v4] Failed to generate snapshots:", error);
+              console.error(
+                "[content-v4] Failed to generate snapshots:",
+                error
+              );
 
-              browser.runtime.sendMessage({
-                type: "snapshots:results",
-                automatorId: "none",
-                ariaSnapshot: `# Error generating ARIA snapshot: ${error.message}`,
-                yamlSnapshot: `# Error generating YAML snapshot: ${error.message}`,
-                timestamp: new Date().toISOString(),
-              }).catch(console.error);
+              browser.runtime
+                .sendMessage({
+                  type: "snapshots:results",
+                  automatorId: "none",
+                  ariaSnapshot: `# Error generating ARIA snapshot: ${error.message}`,
+                  yamlSnapshot: `# Error generating YAML snapshot: ${error.message}`,
+                  timestamp: new Date().toISOString(),
+                })
+                .catch(console.error);
 
               sendResponse({ success: false, error: error.message });
             }
@@ -120,22 +128,11 @@ export default defineContentScript({
               );
             return true; // Async response
 
-          case "devtools:navigate-to-chat":
-            testRunner
-              .testFunction("goToChatPage", [{ chatId: command.chatId }])
-              .then((result) => sendResponse({ success: true, result }))
-              .catch((error) =>
-                sendResponse({ success: false, error: error.message })
-              );
-            return true; // Async response
-
           case "devtools:submit-prompt":
             testRunner
-              .submitPromptAndWatch(
-                command.prompt,
-                command.chatId,
-                command.messageId
-              )
+              .testFunction("submitPrompt", [
+                { prompt: command.prompt, chatId: command.chatId },
+              ])
               .then((result) => sendResponse({ success: true, result }))
               .catch((error) =>
                 sendResponse({ success: false, error: error.message })
@@ -162,8 +159,11 @@ export default defineContentScript({
 
 /**
  * AutomatorTestRunner - Runs tests and streams results to DevTools
+ * Rewritten to match V2 interface: getLandingPage, getChatPage, submitPrompt, watchPage
  */
 class AutomatorTestRunner {
+  private pageWatcherUnsubscribe?: () => void;
+
   constructor(
     private automator: AiAssistantAutomatorV2,
     private assistantId: AiAssistantId
@@ -179,7 +179,7 @@ class AutomatorTestRunner {
   }
 
   /**
-   * Run the complete test suite
+   * Run the complete test suite for V2 interface
    */
   async runFullTestSuite(): Promise<void> {
     const startTime = Date.now();
@@ -203,15 +203,14 @@ class AutomatorTestRunner {
     let total = 0;
 
     try {
-      // Test selectors
+      // Test selectors first
       await this.testSelectors();
 
-      // Test extractor functions
+      // Test V2 extractor functions
       const extractorTests = [
-        { name: "getLoginState", args: [{ timeoutMs: 5000 }] },
-        { name: "getChatEntries", args: [] },
-        // Skip getChatPage test - requires a valid chatId parameter
-        // { name: "getChatPage", args: [] },
+        { name: "getLandingPage", args: [] },
+        // Skip getChatPage - requires a valid chatId parameter
+        // { name: "getChatPage", args: ["some-chat-id"] },
       ];
 
       for (const test of extractorTests) {
@@ -243,6 +242,9 @@ class AutomatorTestRunner {
           duration: Date.now() - startTime,
         },
       });
+
+      // Auto-start page watcher after tests complete
+      this.startPageWatcher();
     } catch (error: any) {
       this.sendMessage({
         type: "automator:status",
@@ -386,51 +388,6 @@ class AutomatorTestRunner {
   }
 
   /**
-   * Submit a prompt and watch conversation status
-   * Note: Assumes we're already on the correct page (use goToChatPage first if needed)
-   */
-  async submitPromptAndWatch(
-    prompt: string,
-    chatId?: string,
-    messageId?: string
-  ): Promise<FunctionResult> {
-    const generatedMessageId = messageId || `test-${Date.now()}`;
-
-    // Submit prompt (without navigation)
-    const result = await this.testFunction("submitPrompt", [
-      { prompt, chatId },
-    ]);
-
-    if (result.status === "success" && result.data) {
-      // Start watching conversation status
-      const conversationRef: ConversationRef = {
-        messageId: result.data.messageId || generatedMessageId,
-        chatId: result.data.chatId || chatId || "current",
-      };
-
-      console.log(
-        "[content-v4] Starting conversation watcher for:",
-        conversationRef
-      );
-
-      // Watch and stream updates
-      this.automator.watchConversationStatus(conversationRef, (status) => {
-        console.log("[content-v4] Conversation status update:", status);
-
-        this.sendMessage({
-          type: "watcher:update",
-          automatorId: this.assistantId,
-          watcherName: "watchConversationStatus",
-          data: status,
-          timestamp: new Date().toISOString(),
-        });
-      });
-    }
-
-    return result;
-  }
-
-  /**
    * Get ARIA and YAML snapshots of the page
    */
   async getSnapshots(): Promise<void> {
@@ -463,13 +420,67 @@ class AutomatorTestRunner {
   }
 
   /**
-   * Categorize function by name
+   * Start the page watcher to continuously monitor page changes
+   */
+  startPageWatcher(chatId?: string): void {
+    // Stop existing watcher if any
+    if (this.pageWatcherUnsubscribe) {
+      this.pageWatcherUnsubscribe();
+    }
+
+    console.log("[content-v4] Starting page watcher...");
+
+    this.sendMessage({
+      type: "automator:status",
+      automatorId: this.assistantId,
+      status: "idle",
+      message: "Page watcher started",
+      timestamp: new Date().toISOString(),
+    });
+
+    // Start watching page changes
+    this.pageWatcherUnsubscribe = this.automator.watchPage(
+      { chatId },
+      (event) => {
+        console.log("[content-v4] Page event:", event);
+
+        this.sendMessage({
+          type: "watcher:update",
+          automatorId: this.assistantId,
+          watcherName: "watchPage",
+          data: event,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    );
+  }
+
+  /**
+   * Stop the page watcher
+   */
+  stopPageWatcher(): void {
+    if (this.pageWatcherUnsubscribe) {
+      this.pageWatcherUnsubscribe();
+      this.pageWatcherUnsubscribe = undefined;
+      console.log("[content-v4] Page watcher stopped");
+    }
+  }
+
+  /**
+   * Categorize function by name for V2 interface
    */
   private categorizeFunction(
     functionName: string
   ): "extractor" | "action" | "watcher" {
-    if (functionName.startsWith("get")) return "extractor";
-    if (functionName.startsWith("watch")) return "watcher";
+    // V2 extractors: getLandingPage, getChatPage
+    if (functionName === "getLandingPage" || functionName === "getChatPage") {
+      return "extractor";
+    }
+    // V2 watchers: watchPage
+    if (functionName === "watchPage") {
+      return "watcher";
+    }
+    // V2 actions: submitPrompt, getUrlForAction
     return "action";
   }
 }

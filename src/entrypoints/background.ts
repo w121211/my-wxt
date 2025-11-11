@@ -1,6 +1,6 @@
 import { browser } from "wxt/browser";
-import { WebsocketClient } from "../lib/services/websocket/client";
-import { WebsocketRouter } from "../lib/services/websocket/router";
+import { WebsocketClient } from "../lib/services/websocket/client.js";
+import { WebsocketRouter } from "../lib/services/websocket/router.js";
 import type {
   ContentToBackgroundNotification,
   RuntimeMessage,
@@ -14,7 +14,7 @@ export default defineBackground(() => {
   });
   router = new WebsocketRouter(client);
 
-  // Listen for messages from content scripts and popup
+  // Listen for messages from content scripts
   browser.runtime.onMessage.addListener(
     (message: RuntimeMessage, sender, sendResponse) => {
       // Check if it's a notification from a content script

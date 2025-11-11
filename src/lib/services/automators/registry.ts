@@ -6,80 +6,51 @@ import { MatchPattern } from "wxt/utils/match-patterns";
 // import { ClaudeAutomator } from "./claude-extractor";
 // import { GeminiAutomator } from "./gemini-extractor";
 // import { GrokAutomator } from "./grok-automator";
-import { GrokAutomatorV2 } from "../automators-v2/grok-automator-v2";
+import { GrokAutomatorV2 } from "../automators-v2/grok-automator-v2.js";
+import { GeminiAutomatorV2 } from "../automators-v2/gemini-automator-v2.js";
 import type {
-  AiAssistantId,
   AiAssistantAutomatorV2,
-} from "@/lib/types/automators-v2";
+  AiAssistantId,
+} from "../../types/automators-v2.js";
 
 /**
  * Shared global instances of automators (they are stateless)
  */
 // const chatgptAutomator = new ChatgptAutomator();
 // const claudeAutomator = new ClaudeAutomator();
-// const geminiAutomator = new GeminiAutomator();
-// const grokAutomator = new GrokAutomator();
+const geminiAutomator = new GeminiAutomatorV2();
 const grokAutomator = new GrokAutomatorV2();
 
 /**
- * Registry of all automator instances
+ * Registry of all automator instances indexed by their ID
  */
-export const automatorRegistry = {
+export const automatorRegistry: Partial<
+  Record<AiAssistantId, AiAssistantAutomatorV2>
+> = {
   // chatgpt: chatgptAutomator,
   // claude: claudeAutomator,
-  // gemini: geminiAutomator,
-  grok: grokAutomator,
+  [GeminiAutomatorV2.id]: geminiAutomator,
+  // grok: grokAutomator,
 } as const;
 
 /**
- * Detect which assistant ID from URL using WebExtension match patterns
+ * Get automator instance by URL using WebExtension match patterns
  */
-export function detectAssistantIdFromUrl(url: string): AiAssistantId | null {
-  // if (
-  //   ChatgptAutomator.urlGlobs.some((glob) =>
-  //     new MatchPattern(glob).includes(url)
-  //   )
-  // ) {
-  //   return ChatgptAutomator.id;
-  // }
-  // if (
-  //   ClaudeAutomator.urlGlobs.some((glob) =>
-  //     new MatchPattern(glob).includes(url)
-  //   )
-  // ) {
-  //   return ClaudeAutomator.id;
-  // }
-  // if (
-  //   GeminiAutomator.urlGlobs.some((glob) =>
-  //     new MatchPattern(glob).includes(url)
-  //   )
-  // ) {
-  //   return GeminiAutomator.id;
-  // }
-  // if (
-  //   GrokAutomator.urlGlobs.some((glob) => new MatchPattern(glob).includes(url))
-  // ) {
-  //   return GrokAutomator.id;
-  // }
-  if (
-    grokAutomator.urlGlobs.some((glob) => new MatchPattern(glob).includes(url))
-  ) {
-    return grokAutomator.id;
+export function getAutomatorByUrl(url: string): AiAssistantAutomatorV2 | null {
+  const automator = Object.values(automatorRegistry).find((automator) =>
+    automator.urlGlobs.some((glob) => new MatchPattern(glob).includes(url))
+  );
+
+  if (!automator) {
+    console.warn(`[registry] No automator implemented for URL: ${url}`);
   }
-  return null;
+
+  return automator ?? null;
 }
 
 /**
- * Get automator instance by URL (convenience wrapper)
+ * Get automator instance by assistant ID
  */
-export function getAutomatorByUrl(url: string): AiAssistantAutomatorV2 | null {
-  const assistantId = detectAssistantIdFromUrl(url);
-  // return assistantId ? getAutomatorById(assistantId) : null;
-
-  if (assistantId === "grok") {
-    return automatorRegistry["grok"];
-  } else {
-    console.warn(`[registry] No automator implemented for URL: ${url}, assistantId: ${assistantId}`);
-    return null;
-  }
+export function getAutomatorById(id: string): AiAssistantAutomatorV2 | null {
+  return automatorRegistry[id as AiAssistantId] ?? null;
 }
