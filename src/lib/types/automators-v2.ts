@@ -100,7 +100,7 @@ export interface AiAssistantAutomatorV2 {
   readonly selectors: SelectorMap;
 
   // URL Helpers (for background script coordination)
-  getUrlForAction(action: "getLandingPage" | "getChatPage" | "submitPrompt", params?: { chatId?: string }): string;
+  getUrl(params?: { chatId?: string }): string;
 
   // Extractors (assume already on correct page - no navigation)
   getLandingPage(): Promise<LandingPage>;

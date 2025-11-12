@@ -104,21 +104,10 @@ export class GeminiAutomatorV2 implements AiAssistantAutomatorV2 {
   // URL Helpers
   // ============================================================================
 
-  getUrlForAction(
-    action: "getLandingPage" | "getChatPage" | "submitPrompt",
-    params?: { chatId?: string }
-  ): string {
-    switch (action) {
-      case "getLandingPage":
-        return "https://gemini.google.com/";
-      case "getChatPage":
-      case "submitPrompt":
-        return params?.chatId
-          ? this.buildChatUrl(params.chatId)
-          : "https://gemini.google.com/app";
-      default:
-        return "https://gemini.google.com/";
-    }
+  getUrl(params?: { chatId?: string }): string {
+    return params?.chatId
+      ? this.buildChatUrl(params.chatId)
+      : "https://gemini.google.com/app";
   }
 
   // ============================================================================

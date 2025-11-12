@@ -30,7 +30,7 @@ export const automatorRegistry: Partial<
   // chatgpt: chatgptAutomator,
   // claude: claudeAutomator,
   [GeminiAutomatorV2.id]: geminiAutomator,
-  // grok: grokAutomator,
+  [GrokAutomatorV2.id]: grokAutomator,
 } as const;
 
 /**

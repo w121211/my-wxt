@@ -707,7 +707,7 @@ class AutomatorTestRunner {
     if (functionName === "watchPage") {
       return "watcher";
     }
-    // V2 actions: submitPrompt, getUrlForAction
+    // V2 actions: submitPrompt, getUrl
     return "action";
   }
 }

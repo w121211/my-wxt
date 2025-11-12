@@ -7,21 +7,12 @@ import type {
   ChatError,
   SubmitPromptInput,
 } from "../../types/automators-v2.js";
-import type {
-  ServerMessage,
-  ExtensionMessage,
-} from "../../types/websocket.js";
+import type { ServerMessage, ExtensionMessage } from "../../types/websocket.js";
 import type { BackgroundToContentCommand } from "../../types/runtime.js";
 import type { WebsocketClient } from "./client.js";
 
-type AssistantTab = {
-  readonly assistant: AiAssistantId;
-  readonly tabId: number;
-};
-
 export class WebsocketRouter {
   private desiredAssistant: AiAssistantId = "chatgpt";
-  private lastKnownAssistantTab: AssistantTab | null = null;
 
   constructor(private readonly client: WebsocketClient) {}
 
@@ -63,33 +54,33 @@ export class WebsocketRouter {
   };
 
   private async handleSubmitPrompt(
-    assistant: AiAssistantId,
+    assistantId: AiAssistantId,
     requestId: string,
     input: SubmitPromptInput
   ) {
-    const automator = getAutomatorById(assistant);
+    const automator = getAutomatorById(assistantId);
     if (!automator) {
       this.sendBridgeError(
-        assistant,
+        assistantId,
         {
           code: "navigation-failed",
           message: "Automator not found for assistant",
-          details: { assistant },
+          details: { assistantId },
         },
         { requestId }
       );
       return;
     }
 
-    const targetUrl = automator.getUrlForAction("submitPrompt", {
+    const targetUrl = automator.getUrl({
       chatId: input.chatId,
     });
 
     await this.dispatchToContent(
-      assistant,
+      assistantId,
       {
         type: "assistant:submit-prompt",
-        assistantId: assistant,
+        assistantId,
         payload: { requestId, input },
       },
       targetUrl,
@@ -114,8 +105,7 @@ export class WebsocketRouter {
       return;
     }
 
-    const action = message.chatId ? "getChatPage" : "getLandingPage";
-    const targetUrl = automator.getUrlForAction(action, {
+    const targetUrl = automator.getUrl({
       chatId: message.chatId,
     });
 
@@ -136,10 +126,24 @@ export class WebsocketRouter {
     );
   }
 
-  private async handleWatchPageStop(
-    assistant: AiAssistantId,
-    watchId: string
-  ) {
+  private async handleWatchPageStop(assistant: AiAssistantId, watchId: string) {
+    const automator = getAutomatorById(assistant);
+    if (!automator) {
+      this.sendBridgeError(
+        assistant,
+        {
+          code: "navigation-failed",
+          message: "Automator not found for assistant",
+          details: { assistant },
+        },
+        { watchId }
+      );
+      return;
+    }
+
+    // For stop, we just need to find any existing tab (use landing page URL as fallback)
+    const targetUrl = automator.getUrl();
+
     await this.dispatchToContent(
       assistant,
       {
@@ -147,15 +151,12 @@ export class WebsocketRouter {
         assistantId: assistant,
         payload: { watchId },
       },
-      undefined,
+      targetUrl,
       { watchId }
     );
   }
 
-  private async handleRunTests(
-    assistant: AiAssistantId,
-    requestId: string
-  ) {
+  private async handleRunTests(assistant: AiAssistantId, requestId: string) {
     const automator = getAutomatorById(assistant);
     if (!automator) {
       this.sendBridgeError(
@@ -170,7 +171,7 @@ export class WebsocketRouter {
       return;
     }
 
-    const targetUrl = automator.getUrlForAction("getLandingPage");
+    const targetUrl = automator.getUrl();
 
     await this.dispatchToContent(
       assistant,
@@ -184,75 +185,151 @@ export class WebsocketRouter {
     );
   }
 
+  /**
+   * Normalize URL for comparison (remove trailing slash, hash, search params)
+   */
+  private normalizeUrl(url: string): string {
+    try {
+      const urlObj = new URL(url);
+      // Keep only origin + pathname, normalize trailing slash
+      urlObj.pathname = urlObj.pathname.replace(/\/$/, "") || "/";
+      urlObj.hash = "";
+      urlObj.search = "";
+      return urlObj.href;
+    } catch {
+      return url;
+    }
+  }
+
+  /**
+   * Check if two URLs point to the same page (ignoring hash/search/trailing slash)
+   */
+  private isSamePage(
+    url1: string | undefined,
+    url2: string | undefined
+  ): boolean {
+    if (!url1 || !url2) return false;
+    return this.normalizeUrl(url1) === this.normalizeUrl(url2);
+  }
+
+  /**
+   * Wait for a newly created tab to finish loading
+   */
+  private async waitForTabComplete(
+    tabId: number,
+    timeoutMs = 10000
+  ): Promise<void> {
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        const tab = await browser.tabs.get(tabId);
+        if (tab.status === "complete") {
+          // Give content script a moment to initialize
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          return;
+        }
+      } catch {
+        // Tab might have been closed
+        return;
+      }
+
+      // Check again in 100ms
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
+  /**
+   * Find or create a tab for the assistant (stateless - never navigates existing tabs)
+   *
+   * Behavior:
+   * - If exact match exists: use it (no new tab)
+   * - If no exact match: create new tab with targetUrl
+   * - Always waits for new tabs to complete loading
+   * - Always activates the tab before returning
+   */
   private async ensureAssistantTab(
     assistant: AiAssistantId,
-    preferredUrl?: string
+    targetUrl: string
   ): Promise<number | null> {
-    if (this.lastKnownAssistantTab?.assistant === assistant) {
-      const tabExists = await browser.tabs
-        .get(this.lastKnownAssistantTab.tabId)
-        .then(
-          () => true,
-          () => false
-        );
-      if (tabExists) {
-        if (preferredUrl) {
-          await browser.tabs.update(this.lastKnownAssistantTab.tabId, {
-            url: preferredUrl,
-            active: false,
-          });
-        }
-        return this.lastKnownAssistantTab.tabId;
-      }
-      this.lastKnownAssistantTab = null;
-    }
-
-    // Get automator configuration
     const automator = getAutomatorById(assistant);
     if (!automator) {
       return null;
     }
 
+    // Query for all tabs matching this assistant's URL patterns
     const matchingTabs = await browser.tabs.query({
       url: automator.urlGlobs as unknown as string[],
     });
 
-    const tab =
-      matchingTabs.find((candidate) => {
-        if (!preferredUrl || !candidate.url) return true;
-        return candidate.url === preferredUrl;
-      }) ?? matchingTabs[0];
-
-    if (tab?.id) {
-      if (preferredUrl && tab.url !== preferredUrl) {
-        await browser.tabs.update(tab.id, { url: preferredUrl, active: false });
-      }
-      this.lastKnownAssistantTab = { assistant, tabId: tab.id };
-      return tab.id;
+    // Try to find exact page match
+    const exactMatch = matchingTabs.find((tab) =>
+      this.isSamePage(tab.url, targetUrl)
+    );
+    if (exactMatch?.id) {
+      // Activate the existing tab
+      await browser.tabs.update(exactMatch.id, { active: true });
+      return exactMatch.id;
     }
 
+    // No exact match - create new tab for the specific URL
     const created = await browser.tabs.create({
-      url: preferredUrl ?? automator.url,
-      active: false,
+      url: targetUrl,
+      active: true,
     });
     if (!created.id) {
       return null;
     }
-    this.lastKnownAssistantTab = { assistant, tabId: created.id };
+    await this.waitForTabComplete(created.id);
     return created.id;
   }
 
+  /**
+   * Send message to tab with exponential backoff retry
+   */
+  private async sendMessageWithRetry(
+    tabId: number,
+    command: BackgroundToContentCommand,
+    maxRetries = 3
+  ): Promise<void> {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        await browser.tabs.sendMessage(tabId, command);
+        return; // Success!
+      } catch (error) {
+        const isLastAttempt = attempt === maxRetries - 1;
+
+        if (isLastAttempt) {
+          // Final attempt failed, throw error
+          throw error;
+        }
+
+        // Exponential backoff: 200ms, 400ms, 800ms
+        const delayMs = 200 * Math.pow(2, attempt);
+        console.log(
+          `[WebsocketRouter] Retry ${
+            attempt + 1
+          }/${maxRetries} after ${delayMs}ms - content script not ready`
+        );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
+  /**
+   * Dispatch a command to the content script running in the assistant's tab
+   */
   private async dispatchToContent(
     assistant: AiAssistantId,
     command: BackgroundToContentCommand,
-    preferredUrl?: string,
+    targetUrl: string,
     context?: {
       readonly requestId?: string;
       readonly watchId?: string;
       readonly errorCode?: ChatError["code"];
     }
   ) {
-    const tabId = await this.ensureAssistantTab(assistant, preferredUrl);
+    const tabId = await this.ensureAssistantTab(assistant, targetUrl);
     if (tabId === null) {
       this.sendBridgeError(
         assistant,
@@ -266,7 +343,7 @@ export class WebsocketRouter {
     }
 
     try {
-      await browser.tabs.sendMessage(tabId, command);
+      await this.sendMessageWithRetry(tabId, command);
     } catch (error) {
       console.error("Failed to dispatch message to content script", error);
       this.sendBridgeError(

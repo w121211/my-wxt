@@ -92,21 +92,10 @@ export class GrokAutomatorV2 implements AiAssistantAutomatorV2 {
   readonly urlGlobs = GrokAutomatorV2.urlGlobs;
   readonly selectors = selectors;
 
-  getUrlForAction(
-    action: 'getLandingPage' | 'getChatPage' | 'submitPrompt',
-    params?: { chatId?: string }
-  ): string {
-    switch (action) {
-      case 'getLandingPage':
-        return 'https://grok.com/';
-      case 'getChatPage':
-      case 'submitPrompt':
-        return params?.chatId
-          ? `https://grok.com/c/${params.chatId}`
-          : 'https://grok.com/';
-      default:
-        return 'https://grok.com/';
-    }
+  getUrl(params?: { chatId?: string }): string {
+    return params?.chatId
+      ? `https://grok.com/c/${params.chatId}`
+      : 'https://grok.com/';
   }
 
   async getLandingPage(): Promise<LandingPage> {
@@ -246,10 +235,9 @@ export class GrokAutomatorV2 implements AiAssistantAutomatorV2 {
   }
 
   watchPage(
-    options: { chatId?: string },
+    _options: { chatId?: string },
     onChange: (event: PageEvent) => void
   ): Unsubscribe {
-    const { chatId } = options;
     let isActive = true;
     let observer: MutationObserver | null = null;
     let debounceTimer: number | null = null;
@@ -257,8 +245,11 @@ export class GrokAutomatorV2 implements AiAssistantAutomatorV2 {
     const handleChange = async () => {
       if (!isActive) return;
       try {
-        const page = chatId
-          ? await this.getChatPage(chatId)
+        // Determine which page we're on based on current URL, not the requested chatId
+        const currentChatId = this.extractChatIdFromUrl(window.location.href);
+
+        const page = currentChatId
+          ? await this.getChatPage(currentChatId)
           : await this.getLandingPage();
         onChange({ timestamp: new Date(), page });
       } catch (error) {
@@ -275,8 +266,11 @@ export class GrokAutomatorV2 implements AiAssistantAutomatorV2 {
 
     const startObserving = async () => {
       try {
+        // Detect current page type to determine which element to observe
+        const currentChatId = this.extractChatIdFromUrl(window.location.href);
         let targetElement: Element | null = null;
-        if (chatId) {
+
+        if (currentChatId) {
           try {
             targetElement = await waitForElement(selectors.messageContainer, {
               timeout: 2000,
