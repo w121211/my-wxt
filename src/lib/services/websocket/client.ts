@@ -61,6 +61,7 @@ export class WebsocketClient {
       return;
     }
     try {
+      console.log('[WS:OUT]', message);
       this.websocket.send(JSON.stringify(message));
     } catch (error) {
       console.error('Failed to send outbound WS payload', error);
@@ -140,6 +141,7 @@ export class WebsocketClient {
   private handleMessage = (event: MessageEvent<string>): void => {
     try {
       const message = JSON.parse(event.data) as ServerMessage;
+      console.log('[WS:IN]', message);
       this.onMessage(message);
     } catch (error) {
       console.error('Failed to parse inbound WS payload', error);
